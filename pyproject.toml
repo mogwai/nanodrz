@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nanodiarization"
+description = "Speaker Diarisation with Transformers"
+version = "0.1.0"
+dependencies = [
+    "textgrid",
+    "torch",
+    "torchaudio",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "gradio==4.7.1",
+    "ipywidgets",
+    "isort",
+    "jupyterlab",
+    "mypy",
+    "pip-tools",
+    "pre-commit",
+    "pylint",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "flake8",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[project.scripts]
+train = "train:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*", "*_test"]
