@@ -7,9 +7,14 @@ name = "nanodiarization"
 description = "Speaker Diarisation with Transformers"
 version = "0.1.0"
 dependencies = [
+    "descript-audio-codec",
+    "einop",
     "textgrid",
     "torch",
     "torchaudio",
+    "transformers",
+    "pydantic",
+    "wandb",
 ]
 
 [project.optional-dependencies]
