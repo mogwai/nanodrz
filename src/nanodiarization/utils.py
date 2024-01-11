@@ -7,7 +7,6 @@ from typing import Union
 import numpy as np
 from torch import Tensor
 import subprocess
-from typing import Callable, TypeVar, overload
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,53 +23,8 @@ from torch import Tensor
 logger = logging.getLogger(__name__)
 
 
-def count_parameters(model: nn.Module):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-T = TypeVar("T")
-
-
-@overload
-def tree_map(fn: Callable, x: list[T]) -> list[T]:
-    ...
-
-
-@overload
-def tree_map(fn: Callable, x: tuple[T]) -> tuple[T]:
-    ...
-
-
-@overload
-def tree_map(fn: Callable, x: dict[str, T]) -> dict[str, T]:
-    ...
-
-
-@overload
-def tree_map(fn: Callable, x: T) -> T:
-    ...
-
-
-def tree_map(fn: Callable, x):
-    if isinstance(x, list):
-        x = [tree_map(fn, xi) for xi in x]
-    elif isinstance(x, tuple):
-        x = (tree_map(fn, xi) for xi in x)
-    elif isinstance(x, dict):
-        x = {k: tree_map(fn, v) for k, v in x.items()}
-    elif isinstance(x, Tensor):
-        x = fn(x)
-    return x
-
-
-def to_device(x: T, device) -> T:
-    return tree_map(lambda t: t.to(device, non_blocking=True), x)
-
-
-def make_infinite_epochs(dl):
-    while True:
-        yield from dl
-
+def count_parameters(model: nn.Module, nongrad=False):
+    return sum(p.numel() for p in model.parameters() if nongrad or p.requires_grad)
 
 def get_git_commit() -> str:
     """
@@ -101,28 +55,6 @@ def might_have_uncommitted_changes():
 
     return len(msg) > 0
 
-
-def warmup_then_linear_decay(step: int, warmup_steps: int, total_steps: int, min_lr: float, max_lr: float) -> float:
-    if step <= warmup_steps:
-        return min_lr + step * (max_lr - min_lr) / (warmup_steps)
-    elif step > total_steps:
-        return min_lr
-    else:
-        return max_lr - max_lr / (total_steps - warmup_steps) * (step - warmup_steps)
-
-
-def warmup_then_cosine_decay(step: int, warmup_steps: int, total_steps: int, min_lr: float, max_lr: float):
-    if step < warmup_steps:
-        return min_lr + step * (max_lr - min_lr) / (warmup_steps)
-    elif step > total_steps:
-        return min_lr
-    else:
-        decay_ratio = (step - warmup_steps) / (total_steps - warmup_steps)
-        assert 0 <= decay_ratio <= 1
-        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))  # coeff ranges 0..1
-        return min_lr + coeff * (max_lr - min_lr)
-
-
 def reduce_tensor(tensor, world_size):
     rt = tensor.clone()
     dist.all_reduce(rt, op=dist.ReduceOp.SUM)
@@ -133,39 +65,10 @@ def reduce_tensor(tensor, world_size):
     return rt
 
 
-def fig_to_numpy(fig):
-    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep="")
-    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    return data
-
-
-def tensor_to_numpy_plot(x: Tensor) -> np.ndarray:
-    x = x.float().cpu().numpy()
-    fig, ax = plt.subplots(figsize=(12, 8))
-    _ = ax.matshow(x, interpolation="none")
-    plt.tight_layout()
-
-    fig.canvas.draw()
-    data = fig_to_numpy(fig)
-    plt.close()
-    return data
-
-
 def seed_all(seed: int):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
-
-def mask_out_after_eos_id(t: Tensor, eos_id: int, value: int = -100, keep_eos: bool = True) -> Tensor:
-    eos_mask = (t == eos_id).float()
-
-    if keep_eos:
-        eos_mask = F.pad(eos_mask, (1, -1))
-
-    after_eos_mask = eos_mask.cumsum(dim=-1) > 0
-
-    return t.masked_fill(after_eos_mask, value)
 
 
 def make_padding_mask(lengths: Tensor) -> Tensor:
@@ -256,7 +159,6 @@ def sample_top_p(probs: Tensor, p: float) -> Tensor:
     return next_token
 
 
-
 def sha256(b: Union[float, list, Tensor, str, bytes, np.ndarray]):
     if isinstance(b, (int, list, float)):
         b = str(b)
@@ -275,8 +177,74 @@ def sha256(b: Union[float, list, Tensor, str, bytes, np.ndarray]):
 def play(audio:[Tensor, np.ndarray], sr=44100, autoplay=True):
     from IPython.display import display, Audio
     audio = audio.flatten()
+    if audio.dim() < 2: 
+        audio = audio[None]
     # Sum Channels
     if audio.shape[0] > 1:
         audio = audio.sum(dim=0)
-    print(audio.shape)
+    
     display(Audio(audio.cpu().detach(), rate=sr, autoplay=autoplay))
+
+
+def find_nonsilence_chunks(audio:Tensor, sr:int, silence_threshold=0.01, min_silence_len=0.2, min_chunk_len=1):
+    """
+    Finds and returns non-silence chunks in the given audio.
+
+    Args:
+        audio (Tensor): The audio waveform.
+        sr (int): The sample rate of the audio.
+        silence_threshold (float, optional): The threshold below which audio is considered as silence. Defaults to 0.01.
+        min_silence_len (float, optional): The minimum duration of silence to be considered as a separate chunk. Defaults to 0.2.
+        min_chunk_len (float, optional): The minimum duration of a non-silence chunk. Defaults to 1.
+
+    Returns:
+        List[Tensor]: A list of non-silence chunks.
+        List[Tuple[int, int]]: A list of tuples representing the start and end indexes of silence segments.
+    """
+    # Add min_silence_len+1 silence to the end of the audio
+    audio = torch.cat([audio, torch.zeros(1, int(sr*min_silence_len)+1)], dim=-1)
+    amplitude = torch.abs(audio)
+    is_silence = amplitude < silence_threshold
+    silent_frames = is_silence.all(dim=0)
+
+    silence_indexes = []
+    start_idx = 0
+
+    for idx, is_silent in enumerate(silent_frames):
+        if is_silent and start_idx == -1:
+            start_idx = idx
+        elif not is_silent and start_idx != -1:
+            if (idx - start_idx) / sr >= min_silence_len:
+                silence_indexes.append((start_idx, idx))
+            start_idx = -1
+
+    if start_idx is not None and (len(silent_frames) - start_idx) / sr >= min_silence_len:
+        silence_indexes.append((start_idx, len(silent_frames)))
+
+    chunks = []
+    cur_chunk = torch.zeros(1, 0)
+    cur_idx = 0
+    
+    for b,e in silence_indexes:
+        cur_chunk = torch.cat([cur_chunk, audio[:, cur_idx:b]], dim=-1)
+        if cur_chunk.shape[-1] > sr*min_chunk_len:
+            cur_idx = e
+            chunks.append(cur_chunk)
+            cur_chunk = torch.zeros(1, 0)
+        else:
+            cur_idx = b
+    
+    if cur_chunk.shape[-1]!= 0:
+        chunks.append(cur_chunk)
+    
+    return chunks, silence_indexes
+
+
+def visualise_annotation(labels: list):
+    from pyannote.core import Annotation, Segment
+    from IPython.display import display
+    
+    annotation = Annotation()
+    for l in labels:
+        annotation[Segment(l[0], l[0]+l[1])] = l[2]
+    display(annotation)

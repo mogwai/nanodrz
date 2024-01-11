@@ -7,6 +7,7 @@ name = "nanodiarization"
 description = "Speaker Diarisation with Transformers"
 version = "0.1.0"
 dependencies = [
+    "click",
     "descript-audio-codec",
     "einop",
     "textgrid",
