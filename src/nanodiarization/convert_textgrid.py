@@ -20,7 +20,6 @@ def convert_textgrid_rttm(file):
     segments = []
     spk = {}
     num_spk = 1
-    uttid = args.uttid
     for i in range(tg.__len__()):
         for j in range(tg[i].__len__()):
             if tg[i][j].mark:
@@ -41,6 +40,6 @@ def convert_textgrid_rttm(file):
 
     for i in range(len(segments)):
         fmt = "SPEAKER x 1 {:.2f} {:.2f} <NA> <NA> {:s} <NA> <NA>"
-        rttm += "{fmt.format(float(segments[i].stime), float(segments[i].etime) - float(segments[i].stime), str(segments[i].spkr))}\n"
+        rttm += f"{fmt.format(float(segments[i].stime), float(segments[i].etime) - float(segments[i].stime), str(segments[i].spkr))}\n"
 
     return rttm
