@@ -2,6 +2,8 @@ import torch
 from torch.nn import Module
 from torch import Tensor, nn
 import torch.nn.functional as F
+from flash_attn.bert_padding import pad_input, unpad_input
+from torch.nn.utils.rnn import pad_sequence
 import einops
 
 from transformers import AutoTokenizer, T5EncoderModel
@@ -9,7 +11,7 @@ from .config import ModelConfig
 
 import dac
 
-class DiarizationCraft(Module):
+class DiarizeGPT(Module):
 
     def __init__(self, config:ModelConfig):
         super().__init__()
@@ -21,11 +23,11 @@ class DiarizationCraft(Module):
         self.config.dmodel = model.d_model
 
         # Load DAC
-        model_path = dac.utils.download(model_type="44khz")
+        model_path = dac.utils.download(model_type="16khz")
         self.dac: dac.DAC = dac.DAC.load(model_path).eval()
         
-        self.audio_head = nn.Linear(config.dmodel, self.dac.codebook_size)
-        self.audio_embs = nn.ModuleList([nn.Linear(self.dac.codebook_size, config.dmodel) for _ in range(self.config.K)])
+        # self.audio_head = nn.Linear(config.dmodel, self.dac.codebook_size)
+        # self.audio_embs = nn.ModuleList([nn.Linear(self.dac.codebook_size, config.dmodel) for _ in range(self.config.K)])
         
         self.diarize_emb = nn.Parameter(torch.zeros(config.dmodel))
         self.bos_idx = self.text_tokenizer.vocab_size + 1
@@ -34,6 +36,7 @@ class DiarizationCraft(Module):
         self.text_head = nn.Linear(config.dmodel, self.text_vocab_size)
         self.text_emb = model.shared
         self.text_emb_projection = nn.Linear(self.text_emb.embedding_dim, config.dmodel)
+        self.audio_proj = nn.Linear(1024, config.dmodel)
 
         # Positional Encoding        
         self.audio_pos_emb = ScaledSinusoidalEmbedding(config.dmodel)
@@ -48,39 +51,44 @@ class DiarizationCraft(Module):
         )
 
     
-    def forward(self, audio_codes:Tensor, labels:str, text_lengths: Tensor, audio_codes_lengths: Tensor):
-        B = audio_codes.shape[0]
+    def forward(self, audio:Tensor, labels:str, text_lengths: Tensor, audio_lengths: Tensor):
+        B = audio.shape[0]
 
-        # with torch.no_grad():
-        #     audio = self.dac.preprocess(audio)
-        #     audio_codes = self.dac.encode(audio)[1]
+        with torch.no_grad():
+            audio = self.dac.preprocess(audio)
+            audio = self.dac.encode(audio)[0]
         
-        audio_embs = sum([self.audio_embs[k](audio_codes[:,:k]) for k in range(self.K)])
-        
+        audio = self.audio_proj(audio)
+        src = t
         text_tokens = self.text_tokenizer.batch_encode_plus(
             labels,  
             return_tensors="pt",
             padding="longest",
         )
 
+        bos_embs = self.text_emb(self.bos_idx)
         text_embs = self.text_emb(text_tokens)
-        bos_emb = self.text_emb(self.bos_idx)
-        bots_emb = self.text_emb(self.bots_idx)
         eos_emb = self.text_emb(self.eos_idx)
+
+
+        audio
 
         embs = []
         for b in range(B):
             embs.append( 
                 torch.cat((
-                    bos_emb, audio_embs[b, : audio_codes_lengths[b]], 
-                    bots_emb, 
-                    text_embs[b, : text_lengths[b]], eos_emb), 
-                    dim=0
+                    bos_embs,
+                    audio[b, : audio_lengths[b]], 
+                    self.diarize_emb, 
+                    text_embs[b, : text_lengths[b]], 
+                    eos_emb
+                    ), 
+                dim=0
                 )
             )
         
-        seqlens = text_lengths + audio_codes_lengths
-        max_seqlen = audio_codes.shape[1] + labels.shape[-1] 
+        seqlens = text_lengths + audio_lengths
+        max_seqlen = audio.shape[1] + labels.shape[-1] 
 
         cu_seqlens = F.pad(seqlens.cumsum(0, dtype=torch.int32), (1, 0), value=0)
         latents = self.decoder(embs, cu_seqlens, max_seqlen)
@@ -88,9 +96,8 @@ class DiarizationCraft(Module):
         x = torch.split(latents, seqlens.tolist())
 
         text_latents = []
-        audio_latents = []
         for b in range(B):
-            text_latents.append(x[b][1+audio_codes_lengths[b]+1:])
+            text_latents.append(x[b][1+audio_lengths[b]+1:])
 
         text_pred = pad_sequence(text_latents, batch_first=True)  # (B, S, d_model)
         text_logits = self.text 
@@ -227,7 +234,7 @@ if __name__ == "__main__":
     import random
     # TODO Example Inference
     config = ModelConfig()
-    model = DiarizationCraft(config)
+    model = DiarizeGPT(config)
     K = 4
     B = 3  
     # Load Audio 
