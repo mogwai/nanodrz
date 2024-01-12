@@ -20,7 +20,6 @@ def artificial_diarisation_sample(speakers:list[Speaker], max_secs=30, interrupt
     audio = torch.zeros(1, 0)
     names, labels = [], []
     sr = 44100
-
     cur_speakers = random.sample(speakers, k=num_speakers)
 
     last_speaker = None
