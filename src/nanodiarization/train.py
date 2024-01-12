@@ -9,22 +9,24 @@ import torch.multiprocessing as mp
 import wandb
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
-from transformers import AutoTokenizer, T5EncoderModel, UMT5EncoderModel
+from transformers import AutoTokenizer, T5EncoderModel
 
-from nanodiarization.config import Config, load_config
+from nanodiarization.config import Config, load_config, ModelConfig
 from nanodiarization.optim import (
     warmup_then_constant,
     warmup_then_cosine_decay,
     warmup_then_inv_sqrt_decay,
     warmup_then_linear_decay,
 )
+from nanodiarization.model import DiarizeGPT as Model
 from nanodiarization.utils import (
     count_parameters,
     might_have_uncommitted_changes,
     reduce_tensor,
     seed_all,
-    to_device,
 )
+
+from nanodiarization.constants import CACHE_DIR
 
 from .data import build_dl
 
@@ -43,11 +45,10 @@ def train(rank: int, world_size: int, config: Config):
     train_config = config.train
 
     if train_config.checkpoint is not None:
-        checkpoint_path = gcs.download(url=train_config.checkpoint)
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        model_config = SpeechcraftConfig(**checkpoint["config"]["model"])
+        model_config = ModelConfig(**checkpoint["config"]["model"])
     else:
-        model_config: SpeechcraftConfig = config.model
+        model_config: ModelConfig = config.model
 
     data_config = config.data
 
@@ -76,7 +77,7 @@ def train(rank: int, world_size: int, config: Config):
     step = 0
 
     if train_config.checkpoint is not None:
-        checkpoint_path = gcs.download(url=train_config.checkpoint)
+        checkpoint_path = train_config.checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=f"cuda:{rank}")
         _ = model.load_state_dict(checkpoint["model"], strict=False)
 
@@ -90,8 +91,8 @@ def train(rank: int, world_size: int, config: Config):
     if is_main_process and train_config.watch:
         wandb.watch(model, log="all", log_freq=train_config.watch_every)
 
-    if 
-    model = DDP(model, device_ids=[rank])
+    if world_size > 1:
+        model = DDP(model, device_ids=[rank])
 
     train_dl = build_dl(
         # TODO 
@@ -107,7 +108,7 @@ def train(rank: int, world_size: int, config: Config):
     dtype = torch.bfloat16 if train_config.amp_dtype == "bfloat16" else torch.float16
 
     max_lr = train_config.max_lr or 10.0 * train_config.min_lr
-    gradient_accumulation_steps = train_config.gradient_accumulation_steps
+    gradient_accumulation_steps = train_config.grad_acc_steps
 
     train_dl_iter = iter(train_dl)
     batch = next(train_dl_iter)
@@ -249,18 +250,10 @@ def train(rank: int, world_size: int, config: Config):
                     "optimizer": optimizer.state_dict(),
                 }
                 filename = f"{model_config.kind}-{step:07}.pt"
-                file_url = os.path.join(config.run_dir, filename)
-                local_path = gcs.get_local_cache_path(file_url)
 
-                torch.save(checkpoint, local_path)
+                file_url = os.path.join(CACHE_DIR, config.run_dir, filename)
 
-                latest_checkpoint_url = os.path.join(config.run_dir, f"{model_config.kind}-latest.pt")
-
-                # TODO Convert to save to disk
-                gcs.upload(local_path, url=file_url)
-                gcs.upload(local_path, url=latest_checkpoint_url, overwrite=True)
-
-                logger.info(f"Saved checkpoint to {file_url} {latest_checkpoint_url}")
+                torch.save(checkpoint, CACHE_DIR)
 
     train_dl.shutdown()
     val_dl.shutdown()
@@ -300,7 +293,7 @@ def main(config_path: str, edit: bool, dev: bool, profile: bool, watch: bool):
         config.train.val_every = 100
         config.train.total_steps = 1000
         config.train.checkpoint_every = 100
-        config.train.gradient_accumulation_steps = 1
+        config.train.grad_acc_steps = 1
         config.data.val_size = 1_000
 
     TextEncoderCls =T5EncoderModel
@@ -309,10 +302,9 @@ def main(config_path: str, edit: bool, dev: bool, profile: bool, watch: bool):
 
     if config.train.is_resuming:
         print(f"Resuming from {config.train.checkpoint}. Incrementing seed.")
+        # TODO save the seed state in the checkpoint
         config.seed += 1
-        _ = gcs.download(url=config.train.checkpoint)
 
-    # TODO(james) torchrun sets a lot of this stuff for you
     if "MASTER_ADDR" not in os.environ:
         os.environ["MASTER_ADDR"] = "127.0.0.1"
 

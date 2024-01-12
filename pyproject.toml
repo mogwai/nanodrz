@@ -39,7 +39,8 @@ dev = [
 package-dir = { "" = "src" }
 
 [project.scripts]
-train = "train:main"
+train = "nanodiarization.train:main"
+step = "nanodiarization.model:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

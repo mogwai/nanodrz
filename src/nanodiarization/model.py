@@ -2,9 +2,10 @@ import torch
 from torch.nn import Module
 from torch import Tensor, nn
 import torch.nn.functional as F
+from flash_attn.modules.mha import MHA
 from flash_attn.bert_padding import pad_input, unpad_input
 from torch.nn.utils.rnn import pad_sequence
-import einops
+from flash_attn.utils.generation import InferenceParams
 
 from transformers import AutoTokenizer, T5EncoderModel
 from .config import ModelConfig
@@ -15,28 +16,23 @@ class DiarizeGPT(Module):
 
     def __init__(self, config:ModelConfig):
         super().__init__()
-        # Load 
         self.config = config
-        name = "google/byt5-large"
-        self.text_tokenizer = AutoTokenizer.from_pretrained(name)
-        model = T5EncoderModel.from_pretrained(name)
-        self.config.dmodel = model.d_model
+        # Using the byt5 tokenizer model
+        self.text_tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_model)
+        # Try and use the weights to init this model
+        self.text_emb = T5EncoderModel.from_pretrained(config.tokenizer_model).shared
 
         # Load DAC
-        model_path = dac.utils.download(model_type="16khz")
+        model_path = dac.utils.download(model_type=config.dac_model)
         self.dac: dac.DAC = dac.DAC.load(model_path).eval()
-        
-        # self.audio_head = nn.Linear(config.dmodel, self.dac.codebook_size)
-        # self.audio_embs = nn.ModuleList([nn.Linear(self.dac.codebook_size, config.dmodel) for _ in range(self.config.K)])
-        
-        self.diarize_emb = nn.Parameter(torch.zeros(config.dmodel))
+    
+        self.start_diarize_emb = nn.Parameter(torch.zeros(config.dmodel))
         self.bos_idx = self.text_tokenizer.vocab_size + 1
         self.eos_idx = self.text_tokenizer.vocab_size
         self.text_vocab_size = self.text_tokenizer.vocab_size + 1
         self.text_head = nn.Linear(config.dmodel, self.text_vocab_size)
-        self.text_emb = model.shared
         self.text_emb_projection = nn.Linear(self.text_emb.embedding_dim, config.dmodel)
-        self.audio_proj = nn.Linear(1024, config.dmodel)
+        self.audio_proj = nn.Linear(self.dac.codebook_size, config.dmodel)
 
         # Positional Encoding        
         self.audio_pos_emb = ScaledSinusoidalEmbedding(config.dmodel)
@@ -49,6 +45,7 @@ class DiarizeGPT(Module):
             bias=config.bias,
             dropout=config.dropout,
         )
+        self.freeze_components()
 
     
     def forward(self, audio:Tensor, labels:str, text_lengths: Tensor, audio_lengths: Tensor):
@@ -58,8 +55,8 @@ class DiarizeGPT(Module):
             audio = self.dac.preprocess(audio)
             audio = self.dac.encode(audio)[0]
         
-        audio = self.audio_proj(audio)
-        src = t
+        audio = self.audio_proj(audio) + self.audio_pos_emb(torch.arange(audio.shape[-1]))
+        breakpoint()
         text_tokens = self.text_tokenizer.batch_encode_plus(
             labels,  
             return_tensors="pt",
@@ -68,24 +65,22 @@ class DiarizeGPT(Module):
 
         bos_embs = self.text_emb(self.bos_idx)
         text_embs = self.text_emb(text_tokens)
+        text_embs = text_embs + self.text_pos_emb(torch.arange(text_embs.shape[-1]))
         eos_emb = self.text_emb(self.eos_idx)
-
-
-        audio
 
         embs = []
         for b in range(B):
-            embs.append( 
-                torch.cat((
+            emb = torch.cat(
+                (
                     bos_embs,
                     audio[b, : audio_lengths[b]], 
                     self.diarize_emb, 
-                    text_embs[b, : text_lengths[b]], 
-                    eos_emb
-                    ), 
+                    text_embs[b, : text_lengths[b]],
+                ),
                 dim=0
-                )
             )
+            emb = emb + self.audio_pos_emb(torch.arange(emb.shape[-1]))
+            embs.append(emb)
         
         seqlens = text_lengths + audio_lengths
         max_seqlen = audio.shape[1] + labels.shape[-1] 
@@ -99,9 +94,39 @@ class DiarizeGPT(Module):
         for b in range(B):
             text_latents.append(x[b][1+audio_lengths[b]+1:])
 
-        text_pred = pad_sequence(text_latents, batch_first=True)  # (B, S, d_model)
-        text_logits = self.text 
-        
+        text_pred = pad_sequence(text_latents, batch_first=True)
+        text_logits = self.text_head(text_latents)
+        loss = F.cross_entropy(text_logits, text_tokens, ignore_index=self.eos_idx)
+        return loss
+    
+    def freeze_components(self):
+        # Freeze DAC
+        [p.requires_grad_(False) for p in self.dac.parameters()]
+
+    def train(self, mode: bool = True):
+        res = super().train(mode)
+        self.freeze_components()
+        return res
+
+    def configure_optimizers(self, *, weight_decay: float, lr: float, betas: tuple[float, float]):
+        # start with all of the candidate parameters
+        param_dict = {pn: p for pn, p in self.named_parameters()}
+        # filter out those that do not require grad
+        param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
+        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
+        decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
+        nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+        optim_groups = [
+            {"params": decay_params, "weight_decay": weight_decay},
+            {"params": nodecay_params, "weight_decay": 0.0},
+        ]
+
+        optimizer = torch.optim.AdamW(optim_groups, lr=lr, betas=betas, fused=True)
+
+        return optimizer
+
+
 class LayerNorm(nn.Module):
     def __init__(self, d_model: int, bias: bool = False):
         super().__init__()
@@ -229,22 +254,27 @@ class ScaledSinusoidalEmbedding(Module):
     def forward(self, pos_ids: Tensor):
         emb = self.emb[pos_ids]
         return self.weight * emb
+        
 
-if __name__ == "__main__":
-    import random
-    # TODO Example Inference
+
+def main():
     config = ModelConfig()
     model = DiarizeGPT(config)
-    K = 4
-    B = 3  
-    # Load Audio 
-
-    # Load Example Labels
-    codes = [] 
-    lengths = []
-    for i in range(B):
-        lengths.append(random.randint(86*3, 86*30))
-        codes.append(torch.randint(0, 1023, (K, lengths[-1])))
+    from nanodiarization.data import gather_speakers_from_folder, artificial_diarisation_sample
+    B = 2
+    speakers = gather_speakers_from_folder("/home/harry/storj/data/LibriTTS/test-clean/", lambda x: x.split("/")[-3])
     
-    text = "12.1,2,A\n2"
-    model()
+    audios = []
+    labels = []
+    for i in range(B):
+        audio, label = artificial_diarisation_sample(speakers, max_secs=30)
+        audios.append(audio)
+        labels.append("\n".join([",".join(l) for l in labels]))
+
+    audio_lengths = [a.shape[-1] for a in audios]
+    label_lengths = [len(l) for l in labels]
+    model(audio, labels)
+
+
+if __name__ == "__main__":
+    main()

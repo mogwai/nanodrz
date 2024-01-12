@@ -6,12 +6,9 @@ import click
 import yaml
 from pydantic import BaseModel
 
-from .constants import CACHE_DIR, GCS_BUCKET_NAME
+from .constants import CACHE_DIR
 from .utils import get_git_commit, get_git_repo
 
-
-class FooConfig(BaseModel):
-    kind: Literal["foo"] = "foo"
 
 class ModelConfig(BaseModel):    
     layers: int = 12
@@ -22,18 +19,21 @@ class ModelConfig(BaseModel):
     max_seqlen: int = 8192
     # Number of codebooks to use
     K: int = 4
-
+    tokenizer_model:str = "google/byt5-small"
+    dac_model:str = "16khz"
+    sample_rate: int = 16000
+    
 class DataConfig(BaseModel):
-    val_size: int = 5_000
     num_workers: int = 4
     min_audio_duration: float = 0.5
-    max_audio_duration: float = 60.0
+    max_audio_duration: float = 30.0
 
 class TrainConfig(BaseModel):
     total_steps: int = 1_000_000
 
     batch_size: int = 8
-    gradient_accumulation_steps: int = 1
+    # How many steps to do the forward before computing backward
+    grad_acc_steps: int = 1
 
     # AdamW
     min_lr: float = 1e-5
@@ -48,19 +48,17 @@ class TrainConfig(BaseModel):
     lr_schedule: str = "warmup_then_cosine_decay"
     lr_warmup_steps: int = 800
 
-    log_every: int = 10
-    do_val: bool = True
+    do_val: bool = False
     val_every: int = 10_000
 
     checkpoint_every: int = 10_000
-    checkpoint: str | None = None  # checkpoint to restore from
-    continue_from_checkpoint: bool = True  # use the optimizer from the checkpoint
+    checkpoint: str | None = None
+    continue_from_checkpoint: bool = True
 
     amp_dtype: str = "bfloat16"
-
-    profile: bool = False  # switch on pytorch profiling
-
-    watch: bool = False  # switch on wandb.watch
+    torch_profile: bool = False
+    wandb_watch: bool = False
+    log_every: int = 50
     watch_every: int = 1000
 
     seq_len_warmup_steps: int | None = None
@@ -76,14 +74,10 @@ class Config(BaseModel):
     train: TrainConfig = TrainConfig()
     seed: int = 42
 
-    name: str | None = None  # memorable name for the run e.g. gptts-small-ref-enc
-    notes: str | None = None
-    user: str | None = None
-    repo: str | None = None
+    name: str | None = None
     commit: str | None = None
-
+    branch: str | None = None
     run_dir: str | None = None
-    local_run_dir: str | None = None
 
 
 def load_config(config_path: str, edit: bool) -> Config:
@@ -102,7 +96,7 @@ def load_config(config_path: str, edit: bool) -> Config:
     if config.name is None:
         config.name = config.model.kind
 
-    local_run_dir = os.path.join(CACHE_DIR, "gs", d)
+    local_run_dir = os.path.join(CACHE_DIR, config.name)
     config.local_run_dir = local_run_dir
     os.makedirs(config.local_run_dir, exist_ok=True)
 
