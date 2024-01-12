@@ -14,7 +14,7 @@ def download_speech():
     # Save the file to the CACHE_DIR
     file_path = os.path.join(CACHE_DIR, "test-clean.tar.gz")
     with open(file_path, "wb") as file:
-		file.write(response.content)
+        file.write(response.content)
 
     tar = tarfile.open(file_path, mode="r:gz")
     tar.extractall(CACHE_DIR)
