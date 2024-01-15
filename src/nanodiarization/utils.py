@@ -46,6 +46,13 @@ def get_git_repo() -> str:
 
     return repo
 
+def get_git_branch() -> str:
+    try:
+        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode().strip()
+    except subprocess.CalledProcessError:
+        branch = "unknown"
+
+    return branch
 
 def might_have_uncommitted_changes():
     try:
@@ -239,6 +246,18 @@ def find_nonsilence_chunks(audio:Tensor, sr:int, silence_threshold=0.01, min_sil
     
     return chunks, silence_indexes
 
+def to_device(obj:[nn.Module, Tensor, list, dict], targets:str|list[str]):
+    """
+    Takes obj and iterates through the keys putting them on the `device`
+    """
+    if isinstance(obj, Tensor) or isinstance(obj, nn.Module):
+        return obj.to(targets)
+    elif isinstance(obj, (list, tuple)):
+        return [to_device(item, targets) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: to_device(value, targets) for key, value in obj.items()}
+    else:
+        raise Exception("Must be called with list, dict, Tensor or ")
 
 def visualise_annotation(labels: list):
     from pyannote.core import Annotation, Segment

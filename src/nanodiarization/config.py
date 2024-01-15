@@ -1,5 +1,6 @@
 import getpass
 import os
+import time
 from typing import Literal
 
 import click
@@ -7,21 +8,20 @@ import yaml
 from pydantic import BaseModel
 
 from .constants import CACHE_DIR
-from .utils import get_git_commit, get_git_repo
-
+from .utils import get_git_commit, get_git_repo, get_git_branch
 
 class ModelConfig(BaseModel):    
-    layers: int = 12
+    layers: int = 4
     dmodel: int = 1024
     nheads: int = 16
     dropout: float = 0.0
     bias: bool = False
     max_seqlen: int = 8192
-    # Number of codebooks to use
-    K: int = 4
     tokenizer_model:str = "google/byt5-small"
     dac_model:str = "16khz"
     sample_rate: int = 16000
+    # Turn this on  this if you have an ampere GPU
+    use_flash_attn: bool = False
     
 class DataConfig(BaseModel):
     num_workers: int = 4
@@ -31,7 +31,7 @@ class DataConfig(BaseModel):
 class TrainConfig(BaseModel):
     total_steps: int = 1_000_000
 
-    batch_size: int = 8
+    batch_size: int = 2
     # How many steps to do the forward before computing backward
     grad_acc_steps: int = 1
 
@@ -55,10 +55,10 @@ class TrainConfig(BaseModel):
     checkpoint: str | None = None
     continue_from_checkpoint: bool = True
 
-    amp_dtype: str = "bfloat16"
+    amp_dtype: str = "float16"
     torch_profile: bool = False
     wandb_watch: bool = False
-    log_every: int = 50
+    log_every: int = 10
     watch_every: int = 1000
 
     seq_len_warmup_steps: int | None = None
@@ -69,36 +69,30 @@ class TrainConfig(BaseModel):
 
 
 class Config(BaseModel):
-    data: DataConfig 
-    model: ModelConfig
+    data: DataConfig  = DataConfig()
+    model: ModelConfig = ModelConfig()
     train: TrainConfig = TrainConfig()
     seed: int = 42
 
-    name: str | None = None
+    name: str | None = "nanodrz"
     commit: str | None = None
     branch: str | None = None
     run_dir: str | None = None
 
 
-def load_config(config_path: str, edit: bool) -> Config:
+def load_config(config: str | Config, edit: bool) -> Config:
     assert os.getenv("WANDB_API_KEY") is not None, "Please make sure you have set your `WANDB_API_KEY`"
 
-    with open(config_path, encoding="utf-8") as f:
-        config = Config(**yaml.safe_load(f))
+    if type(config) is str:
+        with open(config, encoding="utf-8") as f:
+            config = Config(**yaml.safe_load(f))
 
-    if config.user is None:
-        config.user = getpass.getuser()
-
-    if config.repo is None and config.commit is None:
-        config.repo = get_git_repo()
+    if config.branch is None and config.commit is None:
+        config.branch = get_git_branch()
         config.commit = get_git_commit()
 
-    if config.name is None:
-        config.name = config.model.kind
-
-    local_run_dir = os.path.join(CACHE_DIR, config.name)
-    config.local_run_dir = local_run_dir
-    os.makedirs(config.local_run_dir, exist_ok=True)
+    config.run_dir = os.path.join(CACHE_DIR, config.name, str(int(time.time())))
+    os.makedirs(config.run_dir, exist_ok=True)
 
     if edit:
         edited = click.edit(yaml.dump(config.dict()))
