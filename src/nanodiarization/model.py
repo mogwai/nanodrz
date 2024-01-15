@@ -2,13 +2,13 @@ import torch
 from torch.nn import Module
 from torch import Tensor, nn
 import torch.nn.functional as F
-from flash_attn.modules.mha import MHA
-from flash_attn.bert_padding import pad_input, unpad_input
+from einops import rearrange
 from torch.nn.utils.rnn import pad_sequence
-from flash_attn.utils.generation import InferenceParams
 
 from transformers import AutoTokenizer, T5EncoderModel
 from .config import ModelConfig
+from .modules import ScaledSinusoidalEmbedding, Decoder
+from .utils import to_device, make_padding_mask
 
 import dac
 
@@ -27,14 +27,16 @@ class DiarizeGPT(Module):
         self.dac: dac.DAC = dac.DAC.load(model_path).eval()
     
         self.start_diarize_emb = nn.Parameter(torch.zeros(config.dmodel))
-        self.bos_idx = self.text_tokenizer.vocab_size + 1
-        self.eos_idx = self.text_tokenizer.vocab_size
-        self.text_vocab_size = self.text_tokenizer.vocab_size + 1
-        self.text_head = nn.Linear(config.dmodel, self.text_vocab_size)
+        # I'm going to remove this and just have a diarize
+        # self.bos_idx = self.text_tokenizer.vocab_size + 1
+        # From the docs
+        self.eos_idx = self.text_tokenizer.eos_token_id
+        self.pad_idx = self.text_tokenizer.pad_token_id
+        self.text_head = nn.Linear(config.dmodel, self.text_tokenizer.vocab_size)
         self.text_emb_projection = nn.Linear(self.text_emb.embedding_dim, config.dmodel)
         self.audio_proj = nn.Linear(self.dac.codebook_size, config.dmodel)
 
-        # Positional Encoding        
+        # Positional Encoding
         self.audio_pos_emb = ScaledSinusoidalEmbedding(config.dmodel)
         self.text_pos_emb = ScaledSinusoidalEmbedding(config.dmodel)
 
@@ -47,58 +49,6 @@ class DiarizeGPT(Module):
         )
         self.freeze_components()
 
-    
-    def forward(self, audio:Tensor, labels:str, text_lengths: Tensor, audio_lengths: Tensor):
-        B = audio.shape[0]
-
-        with torch.no_grad():
-            audio = self.dac.preprocess(audio)
-            audio = self.dac.encode(audio)[0]
-        
-        audio = self.audio_proj(audio) + self.audio_pos_emb(torch.arange(audio.shape[-1]))
-        breakpoint()
-        text_tokens = self.text_tokenizer.batch_encode_plus(
-            labels,  
-            return_tensors="pt",
-            padding="longest",
-        )
-
-        bos_embs = self.text_emb(self.bos_idx)
-        text_embs = self.text_emb(text_tokens)
-        text_embs = text_embs + self.text_pos_emb(torch.arange(text_embs.shape[-1]))
-        eos_emb = self.text_emb(self.eos_idx)
-
-        embs = []
-        for b in range(B):
-            emb = torch.cat(
-                (
-                    bos_embs,
-                    audio[b, : audio_lengths[b]], 
-                    self.diarize_emb, 
-                    text_embs[b, : text_lengths[b]],
-                ),
-                dim=0
-            )
-            emb = emb + self.audio_pos_emb(torch.arange(emb.shape[-1]))
-            embs.append(emb)
-        
-        seqlens = text_lengths + audio_lengths
-        max_seqlen = audio.shape[1] + labels.shape[-1] 
-
-        cu_seqlens = F.pad(seqlens.cumsum(0, dtype=torch.int32), (1, 0), value=0)
-        latents = self.decoder(embs, cu_seqlens, max_seqlen)
-        
-        x = torch.split(latents, seqlens.tolist())
-
-        text_latents = []
-        for b in range(B):
-            text_latents.append(x[b][1+audio_lengths[b]+1:])
-
-        text_pred = pad_sequence(text_latents, batch_first=True)
-        text_logits = self.text_head(text_latents)
-        loss = F.cross_entropy(text_logits, text_tokens, ignore_index=self.eos_idx)
-        return loss
-    
     def freeze_components(self):
         # Freeze DAC
         [p.requires_grad_(False) for p in self.dac.parameters()]
@@ -127,153 +77,104 @@ class DiarizeGPT(Module):
         return optimizer
 
 
-class LayerNorm(nn.Module):
-    def __init__(self, d_model: int, bias: bool = False):
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(d_model))
-        self.bias = nn.Parameter(torch.zeros(d_model)) if bias else None
+    
+    def forward(self, audio:Tensor, labels:Tensor, audio_lengths: Tensor, label_lengths: Tensor):
+        B = audio.shape[0]
 
-    def forward(self, x: Tensor) -> Tensor:
-        return F.layer_norm(x, self.weight.shape, self.weight, self.bias, eps=1e-5)
-
-
-class MLP(nn.Module):
-    def __init__(self, d_model: int, bias: bool, dropout: float):
-        super().__init__()
-        self.c_fc = nn.Linear(d_model, 4 * d_model, bias=bias)
-        self.c_proj = nn.Linear(4 * d_model, d_model, bias=bias)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x: Tensor):
-        x = self.c_fc(x)
-        x = F.gelu(x)
-        x = self.c_proj(x)
-        x = self.dropout(x)
-        return x
-
-
-class TransformerBlock(nn.Module):
-    def __init__(
-        self,
-        d_model: int,
-        n_heads: int,
-        bias: bool,
-        dropout: float,
-        layer_idx: int | None = None,
-        causal: bool = True,
-        rotary_emb: bool = False,
-    ):
-        super().__init__()
-
-        rotary_emb_dim = d_model if rotary_emb else 0
-
-        self.attn_norm = LayerNorm(d_model, bias=bias)
-        self.attn = MHA(
-            d_model,
-            n_heads,
-            cross_attn=False,
-            causal=causal,
-            dropout=dropout,
-            use_flash_attn=True,
-            layer_idx=layer_idx,
-            qkv_proj_bias=bias,
-            out_proj_bias=bias,
-            rotary_emb_dim=rotary_emb_dim,
-        )
-
-        self.mlp_norm = LayerNorm(d_model, bias=bias)
-        self.mlp = MLP(d_model, bias, dropout)
-
-    def forward(
-        self,
-        x: Tensor,
-        cu_seqlens: Tensor | None = None,
-        max_seqlen: int | None = None,
-        inference_params: InferenceParams | None = None,
-    ) -> Tensor:
-        x = x + self.attn(
-            self.attn_norm(x), cu_seqlens=cu_seqlens, max_seqlen=max_seqlen, inference_params=inference_params
-        )
-        x = x + self.mlp(self.mlp_norm(x))
-        return x
-
-
-
-class Decoder(nn.Module):
-    def __init__(
-        self, *, d_model: int, n_heads: int, n_layers: int, bias: bool, causal: bool = True, dropout: float = 0.0
-    ):
-        super().__init__()
-
-        self.drop = nn.Dropout(dropout)
-        self.blocks = nn.ModuleList(
-            [
-                TransformerBlock(d_model, n_heads, bias, dropout, layer_idx=layer_idx, causal=causal)
-                for layer_idx in range(n_layers)
-            ]
-        )
-        self.norm_f = LayerNorm(d_model, bias=bias)
-
-    def forward(
-        self,
-        x: Tensor,
-        cu_seqlens: Tensor | None = None,
-        max_seqlen: int | None = None,
-        inference_params: InferenceParams | None = None,
-    ):
-        x = self.drop(x)
-
-        for block in self.blocks:
-            x = block(
-                x,
-                cu_seqlens=cu_seqlens,
-                max_seqlen=max_seqlen,
-                inference_params=inference_params,
-            )
-
-        x = self.norm_f(x)  # (T_total, d_model) or (B, T, d_model)
-
-        return x
-
-class ScaledSinusoidalEmbedding(Module):
-    def __init__(self, d_model: int, theta=10000, max_seqlen: int = 8192):
-        super().__init__()
-        assert (d_model % 2) == 0
-        self.weight = nn.Parameter(torch.ones(1) * d_model**-0.5)
-
-        half_dim = d_model // 2
-        freq_seq = torch.arange(half_dim).float() / half_dim
-        inv_freq = theta**-freq_seq
-
-        pos = torch.arange(max_seqlen)
-        emb = torch.einsum("i, j -> i j", pos, inv_freq)
-        emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
-
-        self.register_buffer("emb", emb, persistent=False)
-
-    def forward(self, pos_ids: Tensor):
-        emb = self.emb[pos_ids]
-        return self.weight * emb
+        audio_lengths = audio_lengths
         
+        with torch.no_grad():
+            audio = self.dac.encode(audio)[0]
+            audio = rearrange(audio, "B L T -> B T L")
 
+        audio = self.audio_proj(audio) + self.audio_pos_emb(torch.arange(audio.shape[1]))
+        text_embs = self.text_emb(labels)
+        text_embs = self.text_emb_projection(text_embs) + self.text_pos_emb(torch.arange(text_embs.shape[1]))
+
+        embs = []
+        for b in range(B):
+            emb = torch.cat(
+                (
+                    audio[b, : audio_lengths[b]], 
+                    self.start_diarize_emb[None], 
+                    text_embs[b, : label_lengths[b]-1],
+                ),
+                dim=0
+            )
+            embs.append(emb)
+        
+        # + 1 for diarization emb
+        seqlens = audio_lengths + label_lengths 
+        if self.config.use_flash_attn:
+            embs = torch.cat(embs, dim=1)
+            max_seqlen = audio.shape[1] + labels.shape[1] 
+            cu_seqlens = F.pad(seqlens.cumsum(0, dtype=torch.int32), (1, 0), value=0)
+            x = self.decoder(embs, cu_seqlens, max_seqlen)
+        else:
+            embs = pad_sequence(embs, batch_first=True)
+            mask = ~make_padding_mask(seqlens)
+            x = self.decoder(embs, mask=mask)
+
+        text_latents = []
+
+        for b in range(B):
+            text_latents.append(x[b, -label_lengths[b]:])
+        
+        text_latents = pad_sequence(text_latents, batch_first=True)
+        text_logits = self.text_head(text_latents).permute(0,2,1)
+        loss = F.cross_entropy(text_logits, labels, ignore_index=self.pad_idx)
+        return {
+            "loss": loss,
+        }
+    
 
 def main():
-    config = ModelConfig()
-    model = DiarizeGPT(config)
+    """
+    Performs a quick training step
+    """
     from nanodiarization.data import gather_speakers_from_folder, artificial_diarisation_sample
+    from nanodiarization import download 
+
+    device_type = "cuda"
+
+    config = ModelConfig()
+    model = DiarizeGPT(config).cuda()
     B = 2
-    speakers = gather_speakers_from_folder("/home/harry/storj/data/LibriTTS/test-clean/", lambda x: x.split("/")[-3])
+    folder = download.dl_libritts_clean()
+    speakers = gather_speakers_from_folder(folder, lambda x: x.split("/")[-3])
     
     audios = []
     labels = []
     for i in range(B):
-        audio, label = artificial_diarisation_sample(speakers, max_secs=30)
-        audios.append(audio)
-        labels.append("\n".join([",".join(l) for l in labels]))
+        audio, label = artificial_diarisation_sample(speakers, max_secs=30, sr=16000)
+        audio = model.dac.preprocess(audio, model.dac.sample_rate) 
+        audios.append(rearrange(audio, "c s -> s c"))
+        labels.append("\n".join([",".join([str(x) for x in l]) for l in label]))
 
-    audio_lengths = [a.shape[-1] for a in audios]
-    label_lengths = [len(l) for l in labels]
-    model(audio, labels)
+    text_tokens = model.text_tokenizer.batch_encode_plus(
+            labels,  
+            return_tensors="pt",
+            padding="longest",
+    )
+
+    # Preprocess the audio here and get the lengths
+
+        
+    label_lengths = text_tokens["attention_mask"].sum(dim=-1)
+    label_lengths = to_device(label_lengths, "cuda")
+    text_tokens = text_tokens["input_ids"].cuda()
+
+    audio_lengths =  torch.tensor([a.shape[0] for a in audios]) // 320
+    audio_lengths = to_device(audio_lengths, "cuda")
+
+    audios = pad_sequence(audios, batch_first=True)
+    audios = rearrange(audios, "B S C -> B C S")
+    audios = to_device(audios, "cuda")
+    
+    dtype = torch.float16
+
+    with torch.autocast(enabled=True, device_type=device_type, dtype=dtype):
+        print(model(audios, text_tokens, audio_lengths, label_lengths))
 
 
 if __name__ == "__main__":
