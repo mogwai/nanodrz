@@ -13,15 +13,15 @@ from transformers import AutoTokenizer, T5EncoderModel
 
 from torch.utils.data import DataLoader, IterableDataset
 
-from nanodiarization.config import Config, load_config, ModelConfig
-from nanodiarization.optim import (
+from nanodrz.config import Config, load_config, ModelConfig
+from nanodrz.optim import (
     warmup_then_constant,
     warmup_then_cosine_decay,
     warmup_then_inv_sqrt_decay,
     warmup_then_linear_decay,
 )
-from nanodiarization.model import DiarizeGPT as Model
-from nanodiarization.utils import (
+from nanodrz.model import DiarizeGPT as Model
+from nanodrz.utils import (
     count_parameters,
     might_have_uncommitted_changes,
     reduce_tensor,
@@ -30,7 +30,7 @@ from nanodiarization.utils import (
 )
 
 
-from nanodiarization.data import (
+from nanodrz.data import (
     gather_speakers_from_folder,
     collate_fn,
     artificial_diarisation_sample,
@@ -38,9 +38,9 @@ from nanodiarization.data import (
 
 )
 
-from nanodiarization import data, utils
+from nanodrz import data, utils
 
-from nanodiarization.constants import CACHE_DIR, RUN_DIR
+from nanodrz.constants import CACHE_DIR, RUN_DIR
 import time
 from .logger import logger
 

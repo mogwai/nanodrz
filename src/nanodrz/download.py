@@ -1,7 +1,7 @@
 import requests
 import tarfile
 
-from nanodiarization.constants import CACHE_DIR
+from nanodrz.constants import CACHE_DIR
 
 from os import path, makedirs
 from tqdm import tqdm
