@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.distributed as dist
+import torchaudio
 from torchaudio.transforms import Resample
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 def count_parameters(model: nn.Module, nongrad=False):
     return sum(p.numel() for p in model.parameters() if nongrad or p.requires_grad)
 
+
 def get_git_commit() -> str:
     """
     https://stackoverflow.com/questions/14989858/get-the-current-git-hash-in-a-python-script
@@ -41,19 +43,29 @@ def get_git_commit() -> str:
 
 def get_git_repo() -> str:
     try:
-        repo = subprocess.check_output(["git", "remote", "get-url", "origin"]).decode().strip()
+        repo = (
+            subprocess.check_output(["git", "remote", "get-url", "origin"])
+            .decode()
+            .strip()
+        )
     except subprocess.CalledProcessError:
         repo = "unknown"
 
     return repo
 
+
 def get_git_branch() -> str:
     try:
-        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode().strip()
+        branch = (
+            subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+            .decode()
+            .strip()
+        )
     except subprocess.CalledProcessError:
         branch = "unknown"
 
     return branch
+
 
 def might_have_uncommitted_changes():
     try:
@@ -62,6 +74,7 @@ def might_have_uncommitted_changes():
         msg = ""
 
     return len(msg) > 0
+
 
 def reduce_tensor(tensor, world_size):
     rt = tensor.clone()
@@ -118,14 +131,20 @@ def multinomial(input: Tensor, num_samples: int, replacement=False, *, generator
             located in the last dimension of tensor input.
     """
     input_ = input.reshape(-1, input.shape[-1])
-    output_ = torch.multinomial(input_, num_samples=num_samples, replacement=replacement, generator=generator)
+    output_ = torch.multinomial(
+        input_, num_samples=num_samples, replacement=replacement, generator=generator
+    )
     output = output_.reshape(*list(input.shape[:-1]), -1)
     return output
 
 
-def apply_repetition_penalty(prev_ids: Tensor, next_logits: Tensor, repetition_penalty: float = 1.0):
+def apply_repetition_penalty(
+    prev_ids: Tensor, next_logits: Tensor, repetition_penalty: float = 1.0
+):
     score = torch.gather(next_logits, -1, prev_ids)
-    score = torch.where(score < 0, score * repetition_penalty, score / repetition_penalty)
+    score = torch.where(
+        score < 0, score * repetition_penalty, score / repetition_penalty
+    )
     # NOTE(james) we used to do this inplace i.e. `next_logits.scatter_(-1, prev_ids, score)` but that seemed to cause weird cuda issues...
     next_logits = torch.scatter(next_logits, -1, prev_ids, score)
     return next_logits
@@ -182,19 +201,22 @@ def sha256(b: Union[float, list, Tensor, str, bytes, np.ndarray]):
         raise Exception("Not implemented a method to handle {0}".format(type(b)))
 
 
-def play(audio:[Tensor, np.ndarray], sr=44100, autoplay=True):
+def play(audio: [Tensor, np.ndarray], sr=44100, autoplay=True):
     from IPython.display import display, Audio
+
     audio = audio.flatten()
-    if audio.dim() < 2: 
+    if audio.dim() < 2:
         audio = audio[None]
     # Sum Channels
     if audio.shape[0] > 1:
         audio = audio.sum(dim=0)
-    
+
     display(Audio(audio.cpu().detach(), rate=sr, autoplay=autoplay))
 
 
-def find_nonsilence_chunks(audio:Tensor, sr:int, silence_threshold=0.01, min_silence_len=0.2, min_chunk_len=1):
+def find_nonsilence_chunks(
+    audio: Tensor, sr: int, silence_threshold=0.01, min_silence_len=0.2, min_chunk_len=1
+):
     """
     Finds and returns non-silence chunks in the given audio.
 
@@ -210,7 +232,7 @@ def find_nonsilence_chunks(audio:Tensor, sr:int, silence_threshold=0.01, min_sil
         List[Tuple[int, int]]: A list of tuples representing the start and end indexes of silence segments.
     """
     # Add min_silence_len+1 silence to the end of the audio
-    audio = torch.cat([audio, torch.zeros(1, int(sr*min_silence_len)+1)], dim=-1)
+    audio = torch.cat([audio, torch.zeros(1, int(sr * min_silence_len) + 1)], dim=-1)
     amplitude = torch.abs(audio)
     is_silence = amplitude < silence_threshold
     silent_frames = is_silence.all(dim=0)
@@ -226,28 +248,32 @@ def find_nonsilence_chunks(audio:Tensor, sr:int, silence_threshold=0.01, min_sil
                 silence_indexes.append((start_idx, idx))
             start_idx = -1
 
-    if start_idx is not None and (len(silent_frames) - start_idx) / sr >= min_silence_len:
+    if (
+        start_idx is not None
+        and (len(silent_frames) - start_idx) / sr >= min_silence_len
+    ):
         silence_indexes.append((start_idx, len(silent_frames)))
 
     chunks = []
     cur_chunk = torch.zeros(1, 0)
     cur_idx = 0
-    
-    for b,e in silence_indexes:
+
+    for b, e in silence_indexes:
         cur_chunk = torch.cat([cur_chunk, audio[:, cur_idx:b]], dim=-1)
-        if cur_chunk.shape[-1] > sr*min_chunk_len:
+        if cur_chunk.shape[-1] > sr * min_chunk_len:
             cur_idx = e
             chunks.append(cur_chunk)
             cur_chunk = torch.zeros(1, 0)
         else:
             cur_idx = b
-    
-    if cur_chunk.shape[-1]!= 0:
+
+    if cur_chunk.shape[-1] != 0:
         chunks.append(cur_chunk)
-    
+
     return chunks, silence_indexes
 
-def to_device(obj:[nn.Module, Tensor, list, dict], targets:str|list[str]):
+
+def to_device(obj: [nn.Module, Tensor, list, dict], targets: str | list[str]):
     """
     Takes obj and iterates through the keys putting them on the `device`
     """
@@ -260,19 +286,21 @@ def to_device(obj:[nn.Module, Tensor, list, dict], targets:str|list[str]):
     else:
         raise Exception("Must be called with list, dict, Tensor or ")
 
+
 def visualise_annotation(labels: list):
     from pyannote.core import Annotation, Segment
     from IPython.display import display
-    
+
     annotation = Annotation()
     for l in labels:
-        annotation[Segment(l[0], l[0]+l[1])] = l[2]
+        annotation[Segment(l[0], l[0] + l[1])] = l[2]
     display(annotation)
 
 
 RESAMPLERS = {}
 
-def resample(source:int, target:int, audio:Tensor):
+
+def resample(source: int, target: int, audio: Tensor):
     """Maintains classes globally for resampling"""
     global RESAMPLERS
 
@@ -281,5 +309,11 @@ def resample(source:int, target:int, audio:Tensor):
         RESAMPLERS[source] = {}
     if target not in RESAMPLERS[source]:
         RESAMPLERS[source][target] = Resample(source, target)
-    
+
     return RESAMPLERS[source][target](audio)
+
+
+def get_file_duration(file: str):
+    """Returns the duration in seconds of the given file"""
+    info = torchaudio.info(file)
+    return info.num_frames / info.sample_rate
