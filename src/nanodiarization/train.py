@@ -32,6 +32,7 @@ from nanodiarization.utils import (
 from nanodiarization.data import (
     gather_speakers_from_folder,
     collate_fn,
+    libritts_clean,
 )
 from nanodiarization import download
 
@@ -66,12 +67,13 @@ def train(rank: int, world_size: int, config: Config):
 
     is_main_process = rank == 0
 
-    folder = download.dl_libritts_clean()
-    speakers = gather_speakers_from_folder(folder, lambda x: x.split("/")[-3])
+    speakers = libritts_clean()
 
     if is_main_process:
         wandb.init(
-            project="nano-diarization", config=config.dict(), settings=wandb.Settings()
+            project="nano-diarization", 
+            config=config.model_dump(), 
+            settings=wandb.Settings()
         )
 
     seed_all(config.seed)
