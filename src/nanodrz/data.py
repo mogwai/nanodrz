@@ -110,7 +110,7 @@ def artificial_diarisation_sample(
     names, labels = [], []
 
     cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
-    seconds = random.uniform(max_secs/4, max_secs)
+    seconds = random.uniform(min_seconds, max_secs)
 
     last_speaker = None
     # While we're still less than the target secs

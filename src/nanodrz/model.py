@@ -180,6 +180,52 @@ class DiarizeGPT(Module):
 
         return {"loss": loss}
 
+    @torch.inference_mode()
+    def generate(self, audio: Tensor, temperature=.8, max_steps=400):
+        with torch.no_grad():
+            audio = self.dac.encode(audio)[0]
+            audio = rearrange(audio, "B L T -> B T L")
+
+        if self.dac.latent_dim != self.config.dmodel:
+            audio = self.audio_proj(audio)
+        
+        audio = audio +self.audio_pos_emb(
+            torch.arange(audio.shape[1])
+        )
+
+        emb = torch.cat((audio, self.start_diarize_emb[None]), dim=-1)
+        out = []
+        
+        for _ in range(max_steps):
+            latents = self.decoder(emb)[:, :, -1]
+            logits = self.text_head(latents)
+            logits[..., self.config.audio_tokens_pad_id :] = -1e9
+            
+            # if repetition_penalty != 1.0:
+            #     begin = max(0, offset - repetition_penalty_window)
+
+            #     score = torch.gather(logits, -1, sequence[[0], :, begin:offset])
+            #     # if score < 0 then repetition penalty has to be multiplied to reduce the previous token probability
+            #     score = torch.where(score <= 0.0, score * repetition_penalty, score / repetition_penalty)
+            #     logits = logits.scatter(-1, sequence[[0], :, begin:offset], score)
+
+            probs = F.softmax(logits / temperature, dim=-1)
+            eos_probs = probs[..., self.eos_idx]
+            if torch.any(eos_probs > .1):
+                print(f"{eos_probs=} greater than threshold - early stopping")
+                break
+            
+            # if top_k is not None and top_k > 0:
+            #     next_token = utils.sample_top_k(probs, top_k)
+            # elif top_p is not None and top_p > 0.0:
+            #     next_token = utils.sample_top_p(probs, top_p)
+            # else:
+            #     next_token = utils.multinomial(probs, num_samples=1)
+            
+            # if (next_token == eos_id).any():
+            #     # print(f"{offset=} EOS token - early stopping")
+            #     break
+
 
 def main():
     """

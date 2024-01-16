@@ -68,6 +68,11 @@ def convert_rttm(input_text:str):
 
     return segments
 
+def str_to_labels(labels: str) -> list[str]:
+    ret = []
+    for l in labels.split("\n"):
+        ret.append(float(l[0]), float(l[1]), l[2])
+    return ret
 
 if __name__ == "__main__":
     example="""
