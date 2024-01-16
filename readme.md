@@ -1,21 +1,22 @@
-# Nano Diarization
+# Nano Diarization - WIP!
 
 Trying as much as possible to keep it simple in this repo
 
 Partially inspired by [Pix2Seq](https://ai.googleblog.com/2022/04/pix2seq-new-language-interface-for.html)
 
+
+
 # Instructions
 
 ### Install
 
-```
+```sh
 pip install -e .
-
 ```
 
 ### Train
 
-```
+```sh
 train configs/simple_no_ints.yaml
 ```
 
@@ -25,23 +26,13 @@ train configs/simple_no_ints.yaml
 TODO
 ```
 
-# Experiment Ideas
+# Experiments
 
-### Labelling
-- More efficient labelling A:2.3,4|6.5|2\nB:0.1,0.8\n
-- Just label the speaker.
-- Labelling boundaries instead of start and duration?
+https://wandb.ai/harrycblum/nano-diarization?workspace=user-harrycblum
 
-### Augmentation
-- Add noise generated from audiogen
-- Volume augmentation (Someone coming in closer to the mic as they speak)
-- Pitch Augmentation
-- Add Noise to signal
-- 
+# Experiment Notes
 
-### Core
-- Fine tune pretrained decoder only byt5
-- DAC 44.1khz, 24khz models
+https://fluxions.notion.site/nanodrz-Experiment-Log-acea3d5f436949b68e1f5a520c8cfdbc
 
 
 # Credits
