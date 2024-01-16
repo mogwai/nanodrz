@@ -86,7 +86,17 @@ def train(rank: int, world_size: int, config: Config):
     model = Model(model_config)
     model.cuda(rank)
 
-    ds = GeneratorIterableDataset(artificial_drz_generator(speakers, model))
+    ds = GeneratorIterableDataset(
+        artificial_drz_generator(
+            speakers, 
+            model, 
+            data.max_audio_duration, 
+            model.dac.sample_rate,
+            interrupt_sec_mean=data.interrupt_sec_mean,
+            interrupt_var=data.interrupt_var,
+            num_speakers=data.num_speakers,
+        )
+    )
     train_dl = DataLoader(
         ds, batch_size=B, collate_fn=collate_fn, num_workers=data.num_workers
     )
@@ -133,9 +143,6 @@ def train(rank: int, world_size: int, config: Config):
         if is_main_process:
             wandb.log(*args, **kwargs)
 
-    if is_main_process:
-        logger.info(f"Took {time.time() - start_time:.2f}s to hit training loop")
-
     if train.lr_schedule == "warmup_then_linear_decay":
         get_lr = warmup_then_linear_decay
     elif train.lr_schedule == "warmup_then_cosine_decay":
@@ -168,11 +175,10 @@ def train(rank: int, world_size: int, config: Config):
         else nullcontext()
     )
 
-    codebook_losses = []
-
     loss = 0.0
-    codebook_losses = None
     hours_seen = 0.0
+    if is_main_process:
+        logger.info(f"Took {time.time() - start_time:.2f}s to hit training loop")
 
     with prof:
         while step < steps:
@@ -304,7 +310,7 @@ def train(rank: int, world_size: int, config: Config):
 def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
     if config is None:
         config = Config()
-    
+
     config = load_config(config, edit)
 
     config.train.torch_profile = config.train.torch_profile or profile

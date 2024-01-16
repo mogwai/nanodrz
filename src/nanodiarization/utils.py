@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.distributed as dist
+from torchaudio.transforms import Resample
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -267,3 +268,18 @@ def visualise_annotation(labels: list):
     for l in labels:
         annotation[Segment(l[0], l[0]+l[1])] = l[2]
     display(annotation)
+
+
+RESAMPLERS = {}
+
+def resample(source:int, target:int, audio:Tensor):
+    """Maintains classes globally for resampling"""
+    global RESAMPLERS
+
+    # Check resampler
+    if source not in RESAMPLERS:
+        RESAMPLERS[source] = {}
+    if target not in RESAMPLERS[source]:
+        RESAMPLERS[source][target] = Resample(source, target)
+    
+    return RESAMPLERS[source][target](audio)
