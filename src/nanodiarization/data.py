@@ -3,6 +3,7 @@ In this file there are various strategies to collate utterances from single spea
 to create diarisation targets.
 """
 import torch
+from dataclasses import dataclass
 import glob
 import torchaudio
 import os
@@ -20,11 +21,22 @@ from nanodiarization import download
 from nanodiarization.utils import get_file_duration, resample
 from nanodiarization.logger import logger
 
+@dataclass
+class Utterance:
+    file_url: str | None =  None
+    seconds: float | None = None
+    sr: int | None = None
+
+
+@dataclass
 class Speaker:
     # Audio samples
-    name: str
+    name: str|None = None
     # Change this to a list of files
-    samples: list[str]
+    utts: list[Utterance]|None  = None
+
+    def __repr__(self):
+        return self.name
 
 
 class GeneratorIterableDataset(IterableDataset):
@@ -57,6 +69,7 @@ def artificial_drz_generator(
     speakers: list[Speaker],
     model: torch.nn.Module,
     max_secs=30,
+    min_secs=10,
     sr=16000,
     interrupt_sec_mean=0.2,
     interrupt_var=0.1,
@@ -67,6 +80,7 @@ def artificial_drz_generator(
         audio, label = artificial_diarisation_sample(
             speakers,
             max_secs=max_secs,
+            min_seconds=min_secs,
             sr=sr,
             interrupt_sec_mean=interrupt_sec_mean,
             interrupt_var=interrupt_var,
@@ -86,6 +100,7 @@ def artificial_drz_generator(
 def artificial_diarisation_sample(
     speakers: list[Speaker],
     max_secs=30,
+    min_seconds=7.5,
     interrupt_sec_mean=0.2,
     interrupt_var=0.1,
     num_speakers=4,
@@ -99,15 +114,17 @@ def artificial_diarisation_sample(
 
     last_speaker = None
     # While we're still less than the target secs
-    while audio.shape[-1] // sr < seconds:
+    while audio.shape[-1] / sr < seconds:
         # Pick a random speaker
         speaker = random.choice(cur_speakers)
+
         if speaker.name == last_speaker:
             continue
+
         last_speaker = speaker.name
 
         # Pick a random sample
-        random_sample_file = random.choice(speaker.samples)
+        random_sample_file = random.choice(speaker.utts).file_url
         random_sample, ssr = torchaudio.load(random_sample_file)
         random_sample = random_sample.sum(dim=0)[None]
         random_sample = resample(ssr, sr, random_sample)
@@ -119,10 +136,8 @@ def artificial_diarisation_sample(
         else:
             # Choose interrupt section with mean interrupt_sec_mean and var interrupt_var
             interrupt_dur = np.random.normal(interrupt_sec_mean, interrupt_var)
-            interrupt_dur = min(audio.shape[-1] / (sr * 2), interrupt_dur)
+            interrupt_dur = min(audio.shape[-1] / sr, interrupt_dur)
             start_label = audio.shape[-1] / sr - interrupt_dur
-
-            assert random_sample.shape[-1] > int(interrupt_dur * sr), breakpoint()
 
             audio = torch.cat(
                 (
@@ -131,8 +146,8 @@ def artificial_diarisation_sample(
                 ),
                 dim=-1,
             )
-            audio[:, -random_sample.shape[-1] :] = random_sample
-
+            audio[:, -random_sample.shape[-1] :] += random_sample
+        
         if speaker.name not in names:
             i = len(names)
             names.append(speaker.name)
@@ -162,47 +177,58 @@ def gather_speakers_from_folder(
     wav_files = itertools.chain(
         *[glob.glob(folder + f"/**/*.{ext}", recursive=True) for ext in exts]
     )
-    speakers = []
+    speakers: list[Speaker] = []
 
     for file in wav_files:
-        # Check if this file is valid
-        stop = False
+        # Extract the speaker name from the file path
+        speaker_name = retrieve_speaker(file)
+        utt = Utterance()
+        utt.file_url = file
+        # info = torchaudio.info(file)
+        # utt.sr = info.sample_rate
+        # utt.seconds = info.num_frames / info.sample_rate
 
+        stop = False
         for check in file_filters:
-            if not check(file):
+            if not check(utt):
                 stop = True
                 break
-
         if stop:
             continue
 
-        # Extract the speaker name from the file path
-        speaker_name = retrieve_speaker(file)
-
         # Check if the speaker object already exists
-        speaker_exists = False
-        for speaker in speakers:
-            if speaker.name == speaker_name:
-                speaker_exists = True
-                speaker.samples.append(file)
+        speaker = None
+        for s in speakers:
+            if s.name == speaker_name:
+                speaker = s
                 break
 
         # If the speaker object doesn't exist, create a new one
-        if not speaker_exists:
-            new_speaker = Speaker()
-            new_speaker.name = speaker_name
-            new_speaker.samples = [file]
-            speakers.append(new_speaker)
+        if speaker is None:
+            speaker = Speaker()
+            speaker.name = speaker_name
+            speakers.append(speaker)
+            speaker.utts = []
+
+        speaker.utts.append(utt)
 
     return speakers
 
-def min_duration(min_secs:int=1) -> callable:
-    return lambda file: get_file_duration(file) > min_secs
+def min_duration(min_secs:int=.1) -> callable:
+    return lambda utt: utt.seconds > min_secs
 
-def libritts_clean():
-    folder = download.dl_libritts_clean()
+def libritts_test()-> list[Speaker]:
+    folder = download.dl_libritts_test()
     return gather_speakers_from_folder(
         folder,
-        lambda x: x.split("/")[-3],
-        file_filters=[min_duration()]
+        lambda x: os.path.basename(x).split("_")[0],
+        # file_filters=[min_duration()]
+    )
+
+def libritts_dev() -> list[Speaker]:
+    folder = download.dl_libritts_dev()
+    return gather_speakers_from_folder(
+        folder,
+        lambda x: os.path.basename(x).split("_")[0],
+        # file_filters=[min_duration()]
     )

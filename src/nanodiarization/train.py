@@ -29,16 +29,18 @@ from nanodiarization.utils import (
     to_device,
 )
 
+
 from nanodiarization.data import (
     gather_speakers_from_folder,
     collate_fn,
-    libritts_clean,
+    artificial_diarisation_sample,
+    GeneratorIterableDataset,
+
 )
-from nanodiarization import download
+
+from nanodiarization import data, utils
 
 from nanodiarization.constants import CACHE_DIR, RUN_DIR
-
-from .data import artificial_drz_generator, GeneratorIterableDataset
 import time
 from .logger import logger
 
@@ -61,13 +63,11 @@ def train(rank: int, world_size: int, config: Config):
     else:
         model_config: ModelConfig = config.model
 
-    data = config.data
+    datacfg = config.data
 
     assert config.run_dir is not None
 
     is_main_process = rank == 0
-
-    speakers = libritts_clean()
 
     if is_main_process:
         wandb.init(
@@ -76,6 +76,10 @@ def train(rank: int, world_size: int, config: Config):
             settings=wandb.Settings()
         )
 
+    # Get Speakers
+    speakers = data.libritts_test() + data.libritts_dev()
+    print(f"Speakers: {len(speakers)}")
+    
     seed_all(config.seed)
 
     device_type = "cuda"
@@ -89,18 +93,19 @@ def train(rank: int, world_size: int, config: Config):
     model.cuda(rank)
 
     ds = GeneratorIterableDataset(
-        artificial_drz_generator(
+        data.artificial_drz_generator(
             speakers, 
             model, 
-            data.max_audio_duration, 
+            datacfg.max_audio_duration,
+            datacfg.min_audio_duration,
             model.dac.sample_rate,
-            interrupt_sec_mean=data.interrupt_sec_mean,
-            interrupt_var=data.interrupt_var,
-            num_speakers=data.num_speakers,
+            interrupt_sec_mean=datacfg.interrupt_sec_mean,
+            interrupt_var=datacfg.interrupt_var,
+            num_speakers=datacfg.num_speakers,
         )
     )
     train_dl = DataLoader(
-        ds, batch_size=B, collate_fn=collate_fn, num_workers=data.num_workers
+        ds, batch_size=B, collate_fn=collate_fn, num_workers=datacfg.num_workers
     )
     val_dl = train_dl
 
