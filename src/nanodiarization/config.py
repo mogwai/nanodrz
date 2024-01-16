@@ -8,33 +8,35 @@ import yaml
 from pydantic import BaseModel
 
 from .constants import CACHE_DIR
-from .utils import get_git_commit, get_git_repo, get_git_branch
+from .utils import get_git_commit, get_git_branch
 
-class ModelConfig(BaseModel):    
+
+class ModelConfig(BaseModel):
     layers: int = 8
     dmodel: int = 1024
     nheads: int = 16
     dropout: float = 0.0
     bias: bool = False
     max_seqlen: int = 8192
-    tokenizer_model:str = "google/byt5-small"
-    dac_model:str = "16khz"
+    tokenizer_model: str = "google/byt5-small"
+    dac_model: str = "16khz"
     sample_rate: int = 16000
     # Turn this on  this if you have an ampere GPU
     use_flash_attn: bool = False
-    
+
+
 class DataConfig(BaseModel):
-    num_workers: int = 4
-    min_audio_duration: float = 0.5
+    num_workers: int = 8
     max_audio_duration: float = 30.0
-    interrupt_sec_mean: float = .2
-    interrupt_var:float = 0.1
+    interrupt_sec_mean: float = 0.2
+    interrupt_var: float = 0.1
     num_speakers: int = 4
+
 
 class TrainConfig(BaseModel):
     total_steps: int = 1_000_000
 
-    batch_size: int = 4
+    batch_size: int = 3
     # How many steps to do the forward before computing backward
     grad_acc_steps: int = 8
 
@@ -61,10 +63,8 @@ class TrainConfig(BaseModel):
     amp_dtype: str = "float16"
     torch_profile: bool = False
     wandb_watch: bool = False
-    log_every: int = 10
+    log_every: int = 1
     watch_every: int = 1000
-
-    seq_len_warmup_steps: int | None = None
 
     @property
     def is_resuming(self) -> bool:
@@ -72,7 +72,7 @@ class TrainConfig(BaseModel):
 
 
 class Config(BaseModel):
-    data: DataConfig  = DataConfig()
+    data: DataConfig = DataConfig()
     model: ModelConfig = ModelConfig()
     train: TrainConfig = TrainConfig()
     seed: int = 42
@@ -84,7 +84,9 @@ class Config(BaseModel):
 
 
 def load_config(config: str | Config, edit: bool) -> Config:
-    assert os.getenv("WANDB_API_KEY") is not None, "Please make sure you have set your `WANDB_API_KEY`"
+    assert (
+        os.getenv("WANDB_API_KEY") is not None
+    ), "Please make sure you have set your `WANDB_API_KEY`"
 
     if type(config) is str:
         with open(config, encoding="utf-8") as f:

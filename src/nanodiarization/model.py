@@ -17,7 +17,8 @@ class DiarizeGPT(Module):
     """
     Decoder Only
 
-    [DAC Z Latents {dmodel}] -> ByT5 Text
+    [DAC Z Latents {dmodel}] -> [ByT5 Text Encoder(Start, Duration, Label)]
+    
     """
 
     def __init__(self, config: ModelConfig):
@@ -119,6 +120,7 @@ class DiarizeGPT(Module):
     ):
         B = audio.shape[0]
 
+        # DAC Z Latent Reduction factor
         audio_lengths = audio_lengths // 320
 
         with torch.no_grad():
@@ -139,6 +141,7 @@ class DiarizeGPT(Module):
                 (
                     audio[b, : audio_lengths[b]],
                     self.start_diarize_emb[None],
+                    # We're predicting up to eos token (which is included in the sequence) 
                     text_embs[b, : label_lengths[b] - 1],
                 ),
                 dim=0,
@@ -161,16 +164,14 @@ class DiarizeGPT(Module):
 
         for b in range(B):
             text_latents.append(
-                x[b, audio_lengths[b]: audio_lengths[b] + label_lengths[b]]
+                x[b, audio_lengths[b] : audio_lengths[b] + label_lengths[b]]
             )
 
         text_latents = pad_sequence(text_latents, batch_first=True)
         text_logits = self.text_head(text_latents).permute(0, 2, 1)
         loss = F.cross_entropy(text_logits, labels, ignore_index=self.pad_idx)
 
-        return {
-            "loss": loss,
-        }
+        return {"loss": loss}
 
 
 def main():

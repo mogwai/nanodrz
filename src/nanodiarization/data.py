@@ -10,13 +10,15 @@ from os.path import expanduser
 import numpy as np
 import random
 import itertools
+import time
 
 from torch.nn.utils.rnn import pad_sequence
 import torch
 from torch.utils.data import IterableDataset
+from nanodiarization import download
 
-from nanodiarization.utils import resample
-
+from nanodiarization.utils import get_file_duration, resample
+from nanodiarization.logger import logger
 
 class Speaker:
     # Audio samples
@@ -34,8 +36,9 @@ class GeneratorIterableDataset(IterableDataset):
 
 
 def collate_fn(batch):
+    t1 = time.perf_counter()
     audios = [b[0] for b in batch]
-    audio_lengths = [a.shape[-1] // 320 for a in audios]
+    audio_lengths = [a.shape[-1] for a in audios]
     labels = [b[1][0] for b in batch]
     label_lengths = [l.shape[-1] for l in labels]
     audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True).permute(
@@ -60,6 +63,7 @@ def artificial_drz_generator(
     num_speakers=4,
 ):
     while True:
+        t1 = time.perf_counter()
         audio, label = artificial_diarisation_sample(
             speakers,
             max_secs=max_secs,
@@ -75,6 +79,7 @@ def artificial_drz_generator(
             return_tensors="pt",
             padding="longest",
         )
+        logger.debug(f"{audio.shape[-1] / model.dac.sample_rate}s of audio in {time.perf_counter() - t1}s")
         yield audio, label
 
 
@@ -88,7 +93,8 @@ def artificial_diarisation_sample(
 ):
     audio = torch.zeros(1, 0)
     names, labels = [], []
-    cur_speakers = random.sample(speakers, k=num_speakers)
+
+    cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
 
     last_speaker = None
     # While we're still less than the target secs
@@ -103,7 +109,6 @@ def artificial_diarisation_sample(
         random_sample_file = random.choice(speaker.samples)
         random_sample, ssr = torchaudio.load(random_sample_file)
         random_sample = random_sample.sum(dim=0)[None]
-
         random_sample = resample(ssr, sr, random_sample)
 
         # Beginning
@@ -113,8 +118,10 @@ def artificial_diarisation_sample(
         else:
             # Choose interrupt section with mean interrupt_sec_mean and var interrupt_var
             interrupt_dur = np.random.normal(interrupt_sec_mean, interrupt_var)
-            interrupt_dur = min(audio.shape[-1] // sr * 2, interrupt_dur)
+            interrupt_dur = min(audio.shape[-1] / (sr * 2), interrupt_dur)
             start_label = audio.shape[-1] / sr - interrupt_dur
+
+            assert random_sample.shape[-1] > int(interrupt_dur * sr), breakpoint()
 
             audio = torch.cat(
                 (
@@ -147,10 +154,16 @@ def find_files_in_subfolders(folder):
 
 
 def gather_speakers_from_folder(
-    folder: str, retrieve_speaker: callable, exts: list[str] = ["wav", "opus", "mp3"]
+    folder: str, 
+    retrieve_speaker: callable, 
+    exts: list[str] = ["wav", "opus", "mp3"],
+    file_filters: list[callable] = [],
 ):
     """
     Retrieves all the audio files from a specific directory recursively.
+
+    param file_filters: callable returning true for files that don't pass
+    look at min_duration
     """
 
     folder = expanduser(folder)
@@ -160,6 +173,11 @@ def gather_speakers_from_folder(
     speakers = []
 
     for file in wav_files:
+        # Check if this file is valid
+        for check in file_filters:
+            if not check(file): 
+                continue
+
         # Extract the speaker name from the file path
         speaker_name = retrieve_speaker(file)
 
@@ -180,8 +198,13 @@ def gather_speakers_from_folder(
 
     return speakers
 
+def min_duration(min_secs:int=1) -> callable:
+    return lambda file: get_file_duration(file) > min_secs
 
-if __name__ == "__main__":
-    speakers = gather_speakers_from_folder(
-        "/home/harry/storj/data/LibriTTS/test-clean/", lambda x: x.split("/")[-3]
+def libritts_clean():
+    folder = download.dl_libritts_clean()
+    return gather_speakers_from_folder(
+        folder,
+        lambda x: x.split("/")[-3],
+        file_filters=[min_duration()]
     )

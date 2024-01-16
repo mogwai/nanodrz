@@ -31,7 +31,6 @@ from nanodiarization.utils import (
 
 from nanodiarization.data import (
     gather_speakers_from_folder,
-    artificial_diarisation_sample,
     collate_fn,
 )
 from nanodiarization import download
@@ -40,16 +39,16 @@ from nanodiarization.constants import CACHE_DIR, RUN_DIR
 
 from .data import artificial_drz_generator, GeneratorIterableDataset
 import time
-
-logger = logging.getLogger(__name__)
+from .logger import logger
 
 
 def train(rank: int, world_size: int, config: Config):
-    init_process_group(
-        backend="nccl",
-        world_size=world_size,
-        rank=rank,
-    )
+    if world_size > 1:
+        init_process_group(
+            backend="nccl",
+            world_size=world_size,
+            rank=rank,
+        )
 
     start_time = time.time()
 
@@ -78,6 +77,7 @@ def train(rank: int, world_size: int, config: Config):
     seed_all(config.seed)
 
     device_type = "cuda"
+    dtype = torch.bfloat16 if train.amp_dtype == "bfloat16" else torch.float16
     torch.cuda.set_device(rank)
     device = torch.cuda.current_device()
 
@@ -130,15 +130,14 @@ def train(rank: int, world_size: int, config: Config):
     if is_main_process:
         logger.info(f"{count_parameters(model) / 1_000_000:.2f}M parameters")
 
-    dtype = torch.bfloat16 if train.amp_dtype == "bfloat16" else torch.float16
-
+    
     max_lr = train.max_lr or 10.0 * train.min_lr
     gradient_accumulation_steps = train.grad_acc_steps
 
     train_dl_iter = iter(train_dl)
-    batch = next(train_dl_iter)
-    batch = to_device(batch, device)
-
+    
+    batch = to_device(next(train_dl_iter), device)
+    
     def wandb_log(*args, **kwargs):
         if is_main_process:
             wandb.log(*args, **kwargs)
@@ -191,6 +190,7 @@ def train(rank: int, world_size: int, config: Config):
                 param_group["lr"] = lr
 
             for micro_step in range(gradient_accumulation_steps):
+                hours_seen += batch["audio_lengths"].sum()/model.dac.sample_rate/60/60/60
                 model.require_backward_grad_sync = (
                     micro_step == gradient_accumulation_steps - 1
                 )
@@ -202,8 +202,8 @@ def train(rank: int, world_size: int, config: Config):
                     loss = out["loss"]
                     loss = loss / gradient_accumulation_steps
 
-                batch = next(train_dl_iter)
-                batch = to_device(batch, device)
+                batch = to_device(next(train_dl_iter), device)
+                logger.debug(f"Loss: {loss.item()}")
                 loss.backward()
 
             grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -225,6 +225,7 @@ def train(rank: int, world_size: int, config: Config):
                     "train/grad_norm": grad_norm.item(),
                     "train/lr": lr,
                     "train/batch_duration": t2 - t1,
+                    "hours_seen": hours_seen,
                 }
 
                 wandb_log(
@@ -284,11 +285,14 @@ def train(rank: int, world_size: int, config: Config):
                 }
                 filename = f"{model_config.kind}-{step:07}.pt"
 
-                file_url = os.path.join(CACHE_DIR, config.run_dir, filename)
+                file_url = os.path.join(CACHE_DIR, config.run_dir, filename)#
+
+                logger.info(f"Saved checkpoint to {file_url}")
 
                 torch.save(checkpoint, file_url)
 
-    destroy_process_group()
+    if world_size > 1:
+        destroy_process_group()
 
 
 @click.command()
