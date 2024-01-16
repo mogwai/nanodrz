@@ -11,7 +11,7 @@ from .constants import CACHE_DIR
 from .utils import get_git_commit, get_git_repo, get_git_branch
 
 class ModelConfig(BaseModel):    
-    layers: int = 4
+    layers: int = 8
     dmodel: int = 1024
     nheads: int = 16
     dropout: float = 0.0
@@ -27,13 +27,16 @@ class DataConfig(BaseModel):
     num_workers: int = 4
     min_audio_duration: float = 0.5
     max_audio_duration: float = 30.0
+    interrupt_sec_mean: float = .2
+    interrupt_var:float = 0.1
+    num_speakers: int = 4
 
 class TrainConfig(BaseModel):
     total_steps: int = 1_000_000
 
-    batch_size: int = 2
+    batch_size: int = 4
     # How many steps to do the forward before computing backward
-    grad_acc_steps: int = 1
+    grad_acc_steps: int = 8
 
     # AdamW
     min_lr: float = 1e-5
