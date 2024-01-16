@@ -95,10 +95,11 @@ def artificial_diarisation_sample(
     names, labels = [], []
 
     cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
+    seconds = random.uniform(max_secs/4, max_secs)
 
     last_speaker = None
     # While we're still less than the target secs
-    while audio.shape[-1] // sr < max_secs:
+    while audio.shape[-1] // sr < seconds:
         # Pick a random speaker
         speaker = random.choice(cur_speakers)
         if speaker.name == last_speaker:
@@ -144,18 +145,9 @@ def artificial_diarisation_sample(
 
     return audio, labels
 
-
-def find_files_in_subfolders(folder):
-    files = []
-    for root, dirs, filenames in os.walk(folder):
-        for filename in filenames:
-            files.append(os.path.join(root, filename))
-    return files
-
-
 def gather_speakers_from_folder(
-    folder: str, 
-    retrieve_speaker: callable, 
+    folder: str,
+    retrieve_speaker: callable,
     exts: list[str] = ["wav", "opus", "mp3"],
     file_filters: list[callable] = [],
 ):
@@ -174,9 +166,15 @@ def gather_speakers_from_folder(
 
     for file in wav_files:
         # Check if this file is valid
+        stop = False
+
         for check in file_filters:
-            if not check(file): 
-                continue
+            if not check(file):
+                stop = True
+                break
+
+        if stop:
+            continue
 
         # Extract the speaker name from the file path
         speaker_name = retrieve_speaker(file)

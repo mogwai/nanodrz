@@ -316,4 +316,5 @@ def resample(source: int, target: int, audio: Tensor):
 def get_file_duration(file: str):
     """Returns the duration in seconds of the given file"""
     info = torchaudio.info(file)
-    return info.num_frames / info.sample_rate
+    duration = info.num_frames / info.sample_rate
+    return duration
