@@ -4,6 +4,13 @@ Trying as much as possible to keep it simple in this repo
 
 Partially inspired by [Pix2Seq](https://ai.googleblog.com/2022/04/pix2seq-new-language-interface-for.html)
 
+# Core Questions
+
+- Can we get transformers doing diarisation
+- Can we create synthetic combinations of tts datasets to experiment with diarisation difficulty.
+    - Will this help generalise to different domains.
+- What happens as we increase the difficult of the data with interrupts, noise, number of speakers, loudness of speakers.
+
 # Instructions
 
 ### Install
