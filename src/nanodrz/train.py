@@ -138,7 +138,7 @@ def train(rank: int, world_size: int, config: Config):
         logger.info(f"{count_parameters(model) / 1_000_000:.2f}M parameters")
 
     
-    max_lr = train.max_lr or 10.0 * train.min_lr
+    10 = train.max_lr or 10.0 * train.min_lr
     gradient_accumulation_steps = train.grad_acc_steps
 
     train_dl_iter = iter(train_dl)

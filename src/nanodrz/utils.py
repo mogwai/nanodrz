@@ -8,14 +8,12 @@ import numpy as np
 from torch import Tensor
 import subprocess
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.distributed as dist
 import torchaudio
 from torchaudio.transforms import Resample
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 import hashlib
@@ -145,7 +143,6 @@ def apply_repetition_penalty(
     score = torch.where(
         score < 0, score * repetition_penalty, score / repetition_penalty
     )
-    # NOTE(james) we used to do this inplace i.e. `next_logits.scatter_(-1, prev_ids, score)` but that seemed to cause weird cuda issues...
     next_logits = torch.scatter(next_logits, -1, prev_ids, score)
     return next_logits
 
@@ -201,12 +198,14 @@ def sha256(b: Union[float, list, Tensor, str, bytes, np.ndarray]):
         raise Exception("Not implemented a method to handle {0}".format(type(b)))
 
 
-def play(audio: [Tensor, np.ndarray], sr=44100, autoplay=True):
+def play(audio: [Tensor, np.ndarray, str], sr=44100, autoplay=True):
     from IPython.display import display, Audio
+    assert audio.numel() > 100, "play() needs a non empty audio array"
 
     audio = audio.flatten()
     if audio.dim() < 2:
         audio = audio[None]
+    
     # Sum Channels
     if audio.shape[0] > 1:
         audio = audio.sum(dim=0)

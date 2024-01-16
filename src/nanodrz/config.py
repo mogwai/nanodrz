@@ -15,7 +15,7 @@ class ModelConfig(BaseModel):
     layers: int = 8
     dmodel: int = 1024
     nheads: int = 16
-    dropout: float = 0.0
+    dropout: float = 0.2
     bias: bool = False
     max_seqlen: int = 8192
     tokenizer_model: str = "google/byt5-small"
@@ -43,7 +43,7 @@ class TrainConfig(BaseModel):
 
     # AdamW
     min_lr: float = 1e-5
-    max_lr: float | None = None
+    max_lr: float = 5e-5
     weight_decay: float = 0.00
     betas: list[float] = [0.9, 0.95]  # YAML and tuples...
 
@@ -57,7 +57,7 @@ class TrainConfig(BaseModel):
     do_val: bool = False
     val_every: int = 10_000
 
-    checkpoint_every: int = 10_000
+    checkpoint_every: int = 1000
     checkpoint: str | None = None
     continue_from_checkpoint: bool = True
 
