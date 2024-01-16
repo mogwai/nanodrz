@@ -61,10 +61,10 @@ class DiarizeGPT(Module):
             self.decoder,
             self.text_head,
             self.text_emb_projection,
-            # self.audio_proj,
             self.audio_pos_emb,
             self.text_pos_emb,
         ]
+        
         if self.dac.latent_dim != config.dmodel:
             self.init_mod_weights += [self.audio_proj]
 
