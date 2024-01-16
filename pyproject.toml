@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nanodrz"
 description = "Speaker Diarisation with Transformers"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
     "click",
     "descript-audio-codec",
@@ -19,31 +19,9 @@ dependencies = [
     "wandb",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "black",
-    "gradio==4.7.1",
-    "ipywidgets",
-    "isort",
-    "jupyterlab",
-    "mypy",
-    "pip-tools",
-    "pre-commit",
-    "pylint",
-    "pytest",
-    "pytest-asyncio",
-    "pytest-cov",
-    "flake8",
-]
-
 [tool.setuptools]
 package-dir = { "" = "src" }
 
 [project.scripts]
 train = "nanodrz.train:main"
 step = "nanodrz.model:main"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_functions = ["test_*", "*_test"]
