@@ -185,7 +185,7 @@ def main():
     """
     Performs a quick training step
     """
-    from nanodiarization.data import (
+    from nanodrz.data import (
         gather_speakers_from_folder,
         artificial_diarisation_sample,
         libritts_test

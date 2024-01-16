@@ -1,5 +1,5 @@
-from nanodiarization.data import gather_speakers_from_folder, artificial_diarisation_sample, libritts_test
-from nanodiarization.utils import play, visualise_annotation
+from nanodrz.data import gather_speakers_from_folder, artificial_diarisation_sample, libritts_test
+from nanodrz.utils import play, visualise_annotation
 
 speakers = libritts_test()
 

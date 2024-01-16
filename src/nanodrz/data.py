@@ -16,10 +16,10 @@ import time
 from torch.nn.utils.rnn import pad_sequence
 import torch
 from torch.utils.data import IterableDataset
-from nanodiarization import download
+from nanodrz import download
 
-from nanodiarization.utils import get_file_duration, resample
-from nanodiarization.logger import logger
+from nanodrz.utils import get_file_duration, resample
+from nanodrz.logger import logger
 
 @dataclass
 class Utterance:

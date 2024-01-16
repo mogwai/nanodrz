@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nanodiarization"
+name = "nanodrz"
 description = "Speaker Diarisation with Transformers"
 version = "0.1.0"
 dependencies = [
@@ -40,8 +40,8 @@ dev = [
 package-dir = { "" = "src" }
 
 [project.scripts]
-train = "nanodiarization.train:main"
-step = "nanodiarization.model:main"
+train = "nanodrz.train:main"
+step = "nanodrz.model:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
