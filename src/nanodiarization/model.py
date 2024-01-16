@@ -40,7 +40,9 @@ class DiarizeGPT(Module):
 
         self.text_head = nn.Linear(config.dmodel, self.text_tokenizer.vocab_size)
         self.text_emb_projection = nn.Linear(self.text_emb.embedding_dim, config.dmodel)
-        self.audio_proj = nn.Linear(self.dac.codebook_size, config.dmodel)
+        
+        if self.dac.latent_dim != config.dmodel:
+            self.audio_proj = nn.Linear(self.dac.codebook_size, config.dmodel)
 
         # Positional Encoding
         self.audio_pos_emb = ScaledSinusoidalEmbedding(config.dmodel)
@@ -59,10 +61,12 @@ class DiarizeGPT(Module):
             self.decoder,
             self.text_head,
             self.text_emb_projection,
-            self.audio_proj,
+            # self.audio_proj,
             self.audio_pos_emb,
             self.text_pos_emb,
         ]
+        if self.dac.latent_dim != config.dmodel:
+            self.init_mod_weights += [self.audio_proj]
 
         for w in self.init_mod_weights:
             w.apply(self._init_weights)
@@ -127,7 +131,10 @@ class DiarizeGPT(Module):
             audio = self.dac.encode(audio)[0]
             audio = rearrange(audio, "B L T -> B T L")
 
-        audio = self.audio_proj(audio) + self.audio_pos_emb(
+        if self.dac.latent_dim != self.config.dmodel:
+            audio = self.audio_proj(audio)
+        
+        audio = audio +self.audio_pos_emb(
             torch.arange(audio.shape[1])
         )
         text_embs = self.text_emb(labels)
@@ -181,20 +188,20 @@ def main():
     from nanodiarization.data import (
         gather_speakers_from_folder,
         artificial_diarisation_sample,
+        libritts_test
     )
-    from nanodiarization import download
 
     device_type = "cuda"
 
     config = ModelConfig()
     model = DiarizeGPT(config).cuda()
     B = 2
-    folder = download.dl_libritts_clean()
-    speakers = gather_speakers_from_folder(folder, lambda x: x.split("/")[-3])
+    speakers = libritts_test()
 
     audios = []
     labels = []
-    for i in range(B):
+
+    for _ in range(B):
         audio, label = artificial_diarisation_sample(speakers, max_secs=30, sr=16000)
         audio = model.dac.preprocess(audio, model.dac.sample_rate)
         audios.append(rearrange(audio, "c s -> s c"))

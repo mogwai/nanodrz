@@ -2,7 +2,8 @@ import requests
 import tarfile
 
 from nanodiarization.constants import CACHE_DIR
-from os import path
+
+from os import path, makedirs
 from tqdm import tqdm
 
 
@@ -15,7 +16,7 @@ def dl_file(link:str):
         block_size = 1024 * 1024  # 1 MB
         progress_bar = tqdm(
             total=total_size,
-            desc=path.basename(link),
+            desc=link,
             unit="B",
             unit_scale=True,
             leave=False,
@@ -29,48 +30,38 @@ def dl_file(link:str):
     return file_path
 
 
-def dl_libritts_clean():
+def dl_libritts_test():
     """
     LibriTTS https://openslr.elda.org/60/
     """
 
     link = "https://openslr.elda.org/resources/60/test-clean.tar.gz"
-    file_path = path.join(CACHE_DIR, "test-clean.tar.gz")
-    output_path = path.join(CACHE_DIR, "LibriTTS")
 
-    if not path.exists(output_path) or not path.exists(file_path):
-        if not path.exists(file_path):
-            response = requests.get(link, stream=True)
-            total_size = int(response.headers.get("content-length", 0))
-            block_size = 1024 * 1024  # 1 MB
-            progress_bar = tqdm(
-                total=total_size,
-                desc=path.basename(link),
-                unit="B",
-                unit_scale=True,
-                leave=False,
-            )
+    file_path = dl_file(link)
+    extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
+    
+    if not path.exists(extract_folder):
+        makedirs(extract_folder, exist_ok=True)
+        tar = tarfile.open(file_path, mode="r:gz")
+        tar.extractall(extract_folder)
+        tar.close()
 
-            with open(file_path, "wb") as file:
-                for data in response.iter_content(block_size):
-                    progress_bar.update(len(data))
-                    file.write(data)
-            
-            progress_bar.close()
-
-        if not path.exists(output_path):
-            tar = tarfile.open(file_path, mode="r:gz")
-            tar.extractall(CACHE_DIR)
-            tar.close()
-
-    return output_path
+    return path.join(extract_folder, "LibriTTS")
 
 def dl_libritts_dev():
     """
     LibriTTS https://openslr.elda.org/60/
     """
+    
+    link = "https://openslr.elda.org/resources/60/dev-clean.tar.gz"
 
-    https://openslr.elda.org/resources/60/dev-clean.tar.gz
+    file_path = dl_file(link)
+    extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
+    
+    if not path.exists(extract_folder):
+        makedirs(extract_folder, exist_ok=True)
+        tar = tarfile.open(file_path, mode="r:gz")
+        tar.extractall(extract_folder)
+        tar.close()
 
-if __name__ == "__main__":
-    print(dl_libritts_clean())
+    return path.join(extract_folder, "LibriTTS")
