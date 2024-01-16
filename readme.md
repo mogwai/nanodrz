@@ -37,6 +37,6 @@ https://fluxions.notion.site/nanodrz-Experiment-Log-acea3d5f436949b68e1f5a520c8c
 
 # Credits
 
-(James Parsloe)[https://github.com/jamesparsloe] for project structure and lots of the utils found here.
-(Herve Bredin)[https://github.com/hbredin] for his amazing research on pyannote.audio
-(Andrej Karpathy - NanoGPT)[https://github.com/karpathy/nanoGPT/] For lots of great explaination on transformers 
+[James Parsloe](https://github.com/jamesparsloe) for project structure and lots of the utils found here.
+[Herve Bredin](https://github.com/hbredin) for his amazing research on pyannote.audio
+[Andrej Karpathy - NanoGPT](https://github.com/karpathy/nanoGPT/) For lots of great explanation on transformers 
