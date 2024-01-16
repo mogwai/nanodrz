@@ -29,7 +29,7 @@ class DataConfig(BaseModel):
     num_workers: int = 8
     max_audio_duration: float = 30.0
     min_audio_duration:float = 10.0
-    interrupt_sec_mean: float = 0.2
+    interrupt_sec_mean: float = 0.1
     interrupt_var: float = 0.1
     num_speakers: int = 8
 
