@@ -320,7 +320,7 @@ def get_file_duration(file: str):
 
 def autocast_support(dtype):
     """
-    Check if we support bfloat 16
+    Check if we support bfloat16
     """
     x = torch.zeros(1,1)
     try:
