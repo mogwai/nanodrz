@@ -136,9 +136,8 @@ def artificial_diarisation_sample(
         else:
             # Choose interrupt section with mean interrupt_sec_mean and var interrupt_var
             interrupt_dur = np.random.normal(interrupt_sec_mean, interrupt_var)
-            interrupt_dur = min(audio.shape[-1] / sr, interrupt_dur)
+            interrupt_dur = min(audio.shape[-1], random_sample.shape[-1], interrupt_dur*sr)
             start_label = audio.shape[-1] / sr - interrupt_dur
-
 
             try: 
                 audio = torch.cat(
