@@ -113,6 +113,8 @@ def train(rank: int, world_size: int, config: Config):
     train_dl = DataLoader(
         ds, batch_size=B, collate_fn=collate_fn, num_workers=datacfg.num_workers
     )
+    
+    # We're not doing val yet
     val_dl = train_dl
 
     betas = tuple(train.betas)
@@ -334,9 +336,9 @@ def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
 
     if dev:
         print("Running in dev mode (smaller dataset, batch size, fewer epochs, etc.)")
-        config.train.val_every = 100
-        config.train.total_steps = 1000
-        config.train.checkpoint_every = 100
+        config.train.val_every = 9
+        config.train.total_steps = 10
+        config.train.checkpoint_every = 11
         config.train.grad_acc_steps = 1
         config.data.num_workers = 0
 
