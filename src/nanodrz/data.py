@@ -139,14 +139,18 @@ def artificial_diarisation_sample(
             interrupt_dur = min(audio.shape[-1] / sr, interrupt_dur)
             start_label = audio.shape[-1] / sr - interrupt_dur
 
-            audio = torch.cat(
-                (
-                    audio,
-                    torch.zeros(1, random_sample.shape[-1] - int(interrupt_dur * sr)),
-                ),
-                dim=-1,
-            )
-            audio[:, -random_sample.shape[-1] :] += random_sample
+
+            try: 
+                audio = torch.cat(
+                    (
+                        audio,
+                        torch.zeros(1, random_sample.shape[-1] - int(interrupt_dur * sr)),
+                    ),
+                    dim=-1,
+                )
+                audio[:, -random_sample.shape[-1] :] += random_sample
+            except Exception as e:
+                breakpoint()
         
         if speaker.name not in names:
             i = len(names)
