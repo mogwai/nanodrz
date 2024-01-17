@@ -61,7 +61,7 @@ class TrainConfig(BaseModel):
     checkpoint: str | None = None
     continue_from_checkpoint: bool = True
 
-    amp_dtype: str = "float16"
+    amp_dtype: str | None = None
     torch_profile: bool = False
     wandb_watch: bool = False
     log_every: int = 1

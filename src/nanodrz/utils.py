@@ -317,3 +317,15 @@ def get_file_duration(file: str):
     info = torchaudio.info(file)
     duration = info.num_frames / info.sample_rate
     return duration
+
+def autocast_support(dtype):
+    """
+    Check if we support bfloat 16
+    """
+    x = torch.zeros(1,1)
+    try:
+        with torch.amp.autocast(enabled=True, device_type="cuda", dtype=dtype):
+            x = x * 2
+    except RuntimeError:
+        return False
+    return True
