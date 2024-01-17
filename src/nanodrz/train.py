@@ -83,6 +83,25 @@ def train(rank: int, world_size: int, config: Config):
     seed_all(config.seed)
 
     device_type = "cuda"
+    
+    # Test what dtype we can use
+    try:
+        with torch.amp.autocast(enabled=True, device_type=device_type, dtype=torch.bfloat16):
+            x = torch.zeros(1,1)
+            print(x.dtype)
+    except Exception as e:
+        breakpoint()
+    
+    try:
+        with torch.amp.autocast(enabled=True, device_type=device_type, dtype=torch.float16):
+            x = torch.zeros(1,1)
+            print(x.dtype)
+    except Exception as e:
+        breakpoint()
+
+    
+    
+    
     dtype = torch.bfloat16 if train.amp_dtype == "bfloat16" else torch.float16
     torch.cuda.set_device(rank)
     device = torch.cuda.current_device()
