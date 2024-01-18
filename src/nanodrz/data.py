@@ -1,29 +1,24 @@
-"""
-In this file there are various strategies to collate utterances from single speakers
-to create diarisation targets.
-"""
-import torch
-from dataclasses import dataclass
 import glob
-import torchaudio
-import os
-from os.path import expanduser
-import numpy as np
-import random
 import itertools
+import os
+import random
 import time
+from dataclasses import dataclass
+from os.path import expanduser
 
-from torch.nn.utils.rnn import pad_sequence
+import numpy as np
 import torch
+import torchaudio
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import IterableDataset
-from nanodrz import download
 
-from nanodrz.utils import get_file_duration, resample
-from nanodrz.logger import logger
+from nanodrz import download
+from nanodrz.utils import resample
+
 
 @dataclass
 class Utterance:
-    file_url: str | None =  None
+    file_url: str | None = None
     seconds: float | None = None
     sr: int | None = None
 
@@ -31,9 +26,9 @@ class Utterance:
 @dataclass
 class Speaker:
     # Audio samples
-    name: str|None = None
+    name: str | None = None
     # Change this to a list of files
-    utts: list[Utterance]|None  = None
+    utts: list[Utterance] | None = None
 
     def __repr__(self):
         return self.name
@@ -48,7 +43,6 @@ class GeneratorIterableDataset(IterableDataset):
 
 
 def collate_fn(batch):
-    t1 = time.perf_counter()
     audios = [b[0] for b in batch]
     audio_lengths = [a.shape[-1] for a in audios]
     labels = [b[1][0] for b in batch]
@@ -76,7 +70,6 @@ def artificial_drz_generator(
     num_speakers=4,
 ):
     while True:
-        t1 = time.perf_counter()
         audio, label = artificial_diarisation_sample(
             speakers,
             max_secs=max_secs,
@@ -88,29 +81,24 @@ def artificial_drz_generator(
         )
         audio = model.dac.preprocess(audio, model.dac.sample_rate)
         label = "\n".join([",".join([str(x) for x in l]) for l in label])
-        label = model.text_tokenizer.encode(
-            label,
-            return_tensors="pt",
-            padding="longest",
-        )
-        logger.debug(f"{audio.shape[-1] / model.dac.sample_rate}s of audio in {time.perf_counter() - t1}s")
         yield audio, label
 
 
 def artificial_diarisation_sample(
     speakers: list[Speaker],
     max_secs=30,
-    min_seconds=7.5,
+    min_secs=7.5,
     interrupt_sec_mean=0.2,
-    interrupt_var=0.1,
+    silence_max=.2,
     num_speakers=4,
     sr=16000,
+    **kwargs,
 ):
     audio = torch.zeros(1, 0)
     names, labels = [], []
 
     cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
-    seconds = random.uniform(min_seconds, max_secs)
+    seconds = random.uniform(min_secs, max_secs)
 
     last_speaker = None
     # While we're still less than the target secs
@@ -128,29 +116,17 @@ def artificial_diarisation_sample(
         random_sample, ssr = torchaudio.load(random_sample_file)
         random_sample = random_sample.sum(dim=0)[None]
         random_sample = resample(ssr, sr, random_sample)
+    
+        int_range = min(
+            interrupt_sec_mean, audio.shape[-1] / sr, random_sample.shape[-1] / sr
+        )
+        cut_point = int(random.uniform(-int_range, silence_max) * sr)
+        start_label = audio.shape[-1] / sr + cut_point / sr
 
-        # Beginning
-        if audio.shape[-1] == 0:
-            audio = random_sample
-            start_label = 0
-        else:
-            # Choose interrupt section with mean interrupt_sec_mean and var interrupt_var
-            interrupt_dur = np.random.normal(interrupt_sec_mean, interrupt_var)
-            interrupt_dur = min(audio.shape[-1], random_sample.shape[-1], interrupt_dur*sr)
-            start_label = audio.shape[-1] / sr - interrupt_dur
+        padding = torch.zeros(1, random_sample.shape[-1] + cut_point)
+        audio = torch.cat((audio, padding), dim=-1)
+        audio[:, -random_sample.shape[-1] :] += random_sample
 
-            try: 
-                audio = torch.cat(
-                    (
-                        audio,
-                        torch.zeros(1, random_sample.shape[-1] - int(interrupt_dur * sr)),
-                    ),
-                    dim=-1,
-                )
-                audio[:, -random_sample.shape[-1] :] += random_sample
-            except Exception as e:
-                breakpoint()
-        
         if speaker.name not in names:
             i = len(names)
             names.append(speaker.name)
@@ -159,11 +135,13 @@ def artificial_diarisation_sample(
 
         name_label = chr(ord("A") + i)
 
-        labels.append((start_label, random_sample.shape[-1] / sr, name_label))
+        labels.append([start_label, random_sample.shape[-1] / sr, name_label])
 
     return audio, labels
 
+
 def gather_speakers_from_folder(
+        
     folder: str,
     retrieve_speaker: callable,
     exts: list[str] = ["wav", "opus", "mp3"],
@@ -217,16 +195,19 @@ def gather_speakers_from_folder(
 
     return speakers
 
-def min_duration(min_secs:int=.1) -> callable:
+
+def min_duration(min_secs: int = 0.1) -> callable:
     return lambda utt: utt.seconds > min_secs
 
-def libritts_test()-> list[Speaker]:
+
+def libritts_test() -> list[Speaker]:
     folder = download.dl_libritts_test()
     return gather_speakers_from_folder(
         folder,
         lambda x: os.path.basename(x).split("_")[0],
         # file_filters=[min_duration()]
     )
+
 
 def libritts_dev() -> list[Speaker]:
     folder = download.dl_libritts_dev()

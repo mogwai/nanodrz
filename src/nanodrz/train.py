@@ -6,43 +6,19 @@ from contextlib import nullcontext
 import click
 import torch
 import torch.multiprocessing as mp
-import wandb
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
-from transformers import AutoTokenizer, T5EncoderModel
+from torch.utils.data import DataLoader
 
-from torch.utils.data import DataLoader, IterableDataset
-
-from nanodrz.config import Config, load_config, ModelConfig
-from nanodrz.optim import (
-    warmup_then_constant,
-    warmup_then_cosine_decay,
-    warmup_then_inv_sqrt_decay,
-    warmup_then_linear_decay,
-)
-from nanodrz.model import DiarizeGPT as Model
-from nanodrz.utils import (
-    count_parameters,
-    might_have_uncommitted_changes,
-    reduce_tensor,
-    seed_all,
-    to_device,
-)
-
-
-from nanodrz.data import (
-    gather_speakers_from_folder,
-    collate_fn,
-    artificial_diarisation_sample,
-    GeneratorIterableDataset,
-
-)
-
+import wandb
 from nanodrz import data, utils
-
-from nanodrz.constants import CACHE_DIR, RUN_DIR
-import time
-from .logger import logger
+from nanodrz.config import Config, ModelConfig, load_config
+from nanodrz.data import GeneratorIterableDataset, collate_fn
+from nanodrz.model import DiarizeGPT as Model
+from nanodrz.optim import (warmup_then_constant, warmup_then_cosine_decay,
+                           warmup_then_inv_sqrt_decay,
+                           warmup_then_linear_decay)
+from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
 
 
 def train(rank: int, world_size: int, config: Config):
@@ -68,6 +44,7 @@ def train(rank: int, world_size: int, config: Config):
     assert config.run_dir is not None
 
     is_main_process = rank == 0
+    B = train.batch_size
 
     if is_main_process:
         wandb.init(
@@ -78,8 +55,9 @@ def train(rank: int, world_size: int, config: Config):
 
     # Get Speakers
     speakers = data.libritts_test() + data.libritts_dev()
-    print(f"Speakers: {len(speakers)}")
-    
+
+    print(f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}")
+
     seed_all(config.seed)
 
     device_type = "cuda"
@@ -93,7 +71,6 @@ def train(rank: int, world_size: int, config: Config):
     torch.cuda.set_device(rank)
     device = torch.cuda.current_device()
 
-    B = train.batch_size
 
     model = Model(model_config)
     model.cuda(rank)
@@ -143,7 +120,7 @@ def train(rank: int, world_size: int, config: Config):
         model = DDP(model, device_ids=[rank])
 
     if is_main_process:
-        logger.info(f"{count_parameters(model) / 1_000_000:.2f}M parameters")
+        print(f"{count_parameters(model) / 1_000_000:.2f}M parameters")
 
     max_lr = train.max_lr or 10.0 * train.min_lr
     gradient_accumulation_steps = train.grad_acc_steps
@@ -191,7 +168,7 @@ def train(rank: int, world_size: int, config: Config):
     loss = 0.0
     hours_seen = 0.0
     if is_main_process:
-        logger.info(f"Took {time.time() - start_time:.2f}s to hit training loop")
+        print(f"Took {time.time() - start_time:.2f}s to hit training loop")
 
     with prof:
         while step < steps:
@@ -217,7 +194,6 @@ def train(rank: int, world_size: int, config: Config):
                     loss = loss / gradient_accumulation_steps
 
                 batch = to_device(next(train_dl_iter), device)
-                logger.debug(f"Loss: {loss.item()}")
                 loss.backward()
 
             grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -275,7 +251,7 @@ def train(rank: int, world_size: int, config: Config):
 
                 val_duration = val_end - val_start
 
-                logger.info(
+                print(
                     f"{device=} val took {val_duration:.2f}s for {val_steps} steps"
                 )
 
@@ -288,7 +264,7 @@ def train(rank: int, world_size: int, config: Config):
 
             if step % train.checkpoint_every == 0 and is_main_process:
                 checkpoint = {
-                    "config": config.dict(),
+                    "config": config.model_dump(),
                     "step": step,
                     "model": {
                         k: v
@@ -297,12 +273,8 @@ def train(rank: int, world_size: int, config: Config):
                     },
                     "optimizer": optimizer.state_dict(),
                 }
-                filename = f"{model_config.kind}-{step:07}.pt"
-
-                file_url = os.path.join(CACHE_DIR, config.run_dir, filename)#
-
-                logger.info(f"Saved checkpoint to {file_url}")
-
+                file_url = os.path.join(config.run_dir, f"{step:07}.pt")
+                print(f"Saved checkpoint to {file_url}")
                 torch.save(checkpoint, file_url)
 
     if world_size > 1:

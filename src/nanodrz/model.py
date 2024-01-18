@@ -6,9 +6,10 @@ from einops import rearrange
 from torch.nn.utils.rnn import pad_sequence
 
 from transformers import AutoTokenizer, T5EncoderModel
-from .config import ModelConfig
-from .modules import ScaledSinusoidalEmbedding, Decoder
-from .utils import to_device, make_padding_mask
+from nanodrz.config import ModelConfig, Config
+from nanodrz.modules import ScaledSinusoidalEmbedding, Decoder
+from nanodrz.utils import to_device, make_padding_mask
+from nanodrz import utils
 
 import dac
 
@@ -18,7 +19,7 @@ class DiarizeGPT(Module):
     Decoder Only
 
     [DAC Z Latents {dmodel}] -> [ByT5 Text Encoder(Start, Duration, Label)]
-    
+
     """
 
     def __init__(self, config: ModelConfig):
@@ -40,7 +41,7 @@ class DiarizeGPT(Module):
 
         self.text_head = nn.Linear(config.dmodel, self.text_tokenizer.vocab_size)
         self.text_emb_projection = nn.Linear(self.text_emb.embedding_dim, config.dmodel)
-        
+
         if self.dac.latent_dim != config.dmodel:
             self.audio_proj = nn.Linear(self.dac.codebook_size, config.dmodel)
 
@@ -64,7 +65,7 @@ class DiarizeGPT(Module):
             self.audio_pos_emb,
             self.text_pos_emb,
         ]
-        
+
         if self.dac.latent_dim != config.dmodel:
             self.init_mod_weights += [self.audio_proj]
 
@@ -133,10 +134,8 @@ class DiarizeGPT(Module):
 
         if self.dac.latent_dim != self.config.dmodel:
             audio = self.audio_proj(audio)
-        
-        audio = audio +self.audio_pos_emb(
-            torch.arange(audio.shape[1])
-        )
+
+        audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
         text_embs = self.text_emb(labels)
         text_embs = self.text_emb_projection(text_embs) + self.text_pos_emb(
             torch.arange(text_embs.shape[1])
@@ -148,7 +147,7 @@ class DiarizeGPT(Module):
                 (
                     audio[b, : audio_lengths[b]],
                     self.start_diarize_emb[None],
-                    # We're predicting up to eos token (which is included in the sequence) 
+                    # We're predicting up to eos token (which is included in the sequence)
                     text_embs[b, : label_lengths[b] - 1],
                 ),
                 dim=0,
@@ -181,26 +180,31 @@ class DiarizeGPT(Module):
         return {"loss": loss}
 
     @torch.inference_mode()
-    def generate(self, audio: Tensor, temperature=.8, max_steps=400):
+    def generate(
+        self,
+        audio: Tensor,
+        temperature=0.8,
+        max_steps=400,
+        top_k: int = 10,
+        top_p: float = 0.0,
+    ):
         with torch.no_grad():
-            audio = self.dac.encode(audio)[0]
+            audio = self.dac.encode(audio[None])[0]
             audio = rearrange(audio, "B L T -> B T L")
 
         if self.dac.latent_dim != self.config.dmodel:
             audio = self.audio_proj(audio)
-        
-        audio = audio +self.audio_pos_emb(
-            torch.arange(audio.shape[1])
-        )
 
-        emb = torch.cat((audio, self.start_diarize_emb[None]), dim=-1)
-        out = []
-        
+        audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
+
+        emb = torch.cat((audio, self.start_diarize_emb[None][None]), dim=1)
+
+        tokens = []
         for _ in range(max_steps):
-            latents = self.decoder(emb)[:, :, -1]
+            latents = self.decoder(emb)[:, [-1], :]
             logits = self.text_head(latents)
-            logits[..., self.config.audio_tokens_pad_id :] = -1e9
-            
+            logits[..., 0] = -1e9
+
             # if repetition_penalty != 1.0:
             #     begin = max(0, offset - repetition_penalty_window)
 
@@ -211,20 +215,47 @@ class DiarizeGPT(Module):
 
             probs = F.softmax(logits / temperature, dim=-1)
             eos_probs = probs[..., self.eos_idx]
-            if torch.any(eos_probs > .1):
+            if torch.any(eos_probs > 0.1):
                 print(f"{eos_probs=} greater than threshold - early stopping")
                 break
-            
-            # if top_k is not None and top_k > 0:
-            #     next_token = utils.sample_top_k(probs, top_k)
-            # elif top_p is not None and top_p > 0.0:
-            #     next_token = utils.sample_top_p(probs, top_p)
-            # else:
-            #     next_token = utils.multinomial(probs, num_samples=1)
-            
-            # if (next_token == eos_id).any():
-            #     # print(f"{offset=} EOS token - early stopping")
-            #     break
+
+            if top_k is not None and top_k > 0:
+                next_token = utils.sample_top_k(probs, top_k)
+            elif top_p is not None and top_p > 0.0:
+                next_token = utils.sample_top_p(probs, top_p)
+            else:
+                next_token = utils.multinomial(probs, num_samples=1)
+
+            next_token = next_token.flatten()
+            tokens.append(next_token.item())
+
+            next_emb = self.text_emb_projection(self.text_emb(next_token))[None]
+            emb = torch.cat((emb, next_emb), dim=1)
+
+        return self.text_tokenizer.decode(torch.tensor(tokens))
+        
+
+    @staticmethod
+    def from_pretrained(ckpt: str | dict):
+        """
+        {
+            "config": config.model_dump(),
+            "step": step,
+            "model": {
+                k: v
+                for k, v in model.state_dict().items()
+                if not k.startswith("dac.")
+            },
+            "optimizer": optimizer.state_dict(),
+        }
+        """
+        if type(ckpt) is str:
+            ckpt = torch.load(ckpt)
+        
+        config = Config(**ckpt["config"])
+        model = DiarizeGPT(config.model)
+        model.load_state_dict(ckpt["model"], strict=False)
+        return model
 
 
 def main():
@@ -232,9 +263,8 @@ def main():
     Performs a quick training step
     """
     from nanodrz.data import (
-        gather_speakers_from_folder,
         artificial_diarisation_sample,
-        libritts_test
+        libritts_test,
     )
 
     device_type = "cuda"

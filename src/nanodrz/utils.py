@@ -1,26 +1,15 @@
-import logging
-import math
-import random
 import hashlib
-from typing import Union
-
-import numpy as np
-from torch import Tensor
+import random
 import subprocess
+from typing import Union
 
 import numpy as np
 import torch
 import torch.distributed as dist
-import torchaudio
-from torchaudio.transforms import Resample
 import torch.nn as nn
-
-
-import hashlib
-from typing import Union
+import torchaudio
 from torch import Tensor
-
-logger = logging.getLogger(__name__)
+from torchaudio.transforms import Resample
 
 
 def count_parameters(model: nn.Module, nongrad=False):
@@ -113,7 +102,6 @@ def prob_mask_like(shape, prob: float, device):
     else:
         return torch.zeros(shape, device=device).float().uniform_(0, 1) < prob
 
-
 def multinomial(input: Tensor, num_samples: int, replacement=False, *, generator=None):
     """torch.multinomial with arbitrary number of dimensions, and number of candidates on the last dimension.
 
@@ -182,7 +170,6 @@ def sample_top_p(probs: Tensor, p: float) -> Tensor:
     next_token = torch.gather(probs_idx, -1, next_token)
     return next_token
 
-
 def sha256(b: Union[float, list, Tensor, str, bytes, np.ndarray]):
     if isinstance(b, (int, list, float)):
         b = str(b)
@@ -199,13 +186,14 @@ def sha256(b: Union[float, list, Tensor, str, bytes, np.ndarray]):
 
 
 def play(audio: [Tensor, np.ndarray, str], sr=44100, autoplay=True):
-    from IPython.display import display, Audio
+    from IPython.display import Audio, display
+
     assert audio.numel() > 100, "play() needs a non empty audio array"
 
     audio = audio.flatten()
     if audio.dim() < 2:
         audio = audio[None]
-    
+
     # Sum Channels
     if audio.shape[0] > 1:
         audio = audio.sum(dim=0)
@@ -287,8 +275,8 @@ def to_device(obj: [nn.Module, Tensor, list, dict], targets: str | list[str]):
 
 
 def visualise_annotation(labels: list):
-    from pyannote.core import Annotation, Segment
     from IPython.display import display
+    from pyannote.core import Annotation, Segment
 
     annotation = Annotation()
     for l in labels:
@@ -318,11 +306,12 @@ def get_file_duration(file: str):
     duration = info.num_frames / info.sample_rate
     return duration
 
+
 def autocast_support(dtype):
     """
     Check if we support bfloat16
     """
-    x = torch.zeros(1,1)
+    x = torch.zeros(1, 1)
     try:
         with torch.amp.autocast(enabled=True, device_type="cuda", dtype=dtype):
             x = x * 2
