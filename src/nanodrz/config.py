@@ -7,7 +7,7 @@ import click
 import yaml
 from pydantic import BaseModel
 
-from .constants import CACHE_DIR
+from .constants import RUN_DIR
 from .utils import get_git_commit, get_git_branch
 
 
@@ -27,7 +27,7 @@ class ModelConfig(BaseModel):
 
 class DataConfig(BaseModel):
     num_workers: int = 8
-    max_audio_duration: float = 30.0
+    max_secs: float = 30.0
     min_audio_duration:float = 10.0
     interrupt_sec_mean: float = 0.1
     interrupt_var: float = 0.1
@@ -37,9 +37,9 @@ class DataConfig(BaseModel):
 class TrainConfig(BaseModel):
     total_steps: int = 1_000_000
 
-    batch_size: int = 3
+    batch_size: int = 4
     # How many steps to do the forward before computing backward
-    grad_acc_steps: int = 8
+    grad_acc_steps: int = 21
 
     # AdamW
     min_lr: float = 1e-5
@@ -57,7 +57,7 @@ class TrainConfig(BaseModel):
     do_val: bool = False
     val_every: int = 10_000
 
-    checkpoint_every: int = 1000
+    checkpoint_every: int = 100
     checkpoint: str | None = None
     continue_from_checkpoint: bool = True
 
@@ -97,7 +97,7 @@ def load_config(config: str | Config, edit: bool) -> Config:
         config.branch = get_git_branch()
         config.commit = get_git_commit()
 
-    config.run_dir = os.path.join(CACHE_DIR, config.name, str(int(time.time())))
+    config.run_dir = os.path.join(RUN_DIR, config.name, str(int(time.time())))
     os.makedirs(config.run_dir, exist_ok=True)
 
     if edit:
