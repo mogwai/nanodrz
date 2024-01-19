@@ -88,7 +88,7 @@ def artificial_drz_generator(
     num_speakers=4,
 ):
     while True:
-        audio, label = artificial_diarisation_sample(
+        audio2, label = artificial_diarisation_sample(
             speakers,
             max_secs=max_secs,
             min_seconds=min_secs,
@@ -97,11 +97,12 @@ def artificial_drz_generator(
             interrupt_var=interrupt_var,
             num_speakers=num_speakers,
         )
-        audio = model.dac.preprocess(audio, sr)
+        
+        audio = model.dac.preprocess(audio2, sr)
 
         if audio.shape[-1] / sr > max_secs:
-            print(audio.shape[-1], audio.shape[-1]/sr)
-            audio = audio[..., max_secs*sr:]
+            print(audio2.shape[-1], audio.shape[-1], audio.shape[-1]/sr)
+            continue
 
         yield audio, label
 
