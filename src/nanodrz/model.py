@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch.nn.utils.rnn import pad_sequence
 
-from transformers import AutoTokenizer, T5EncoderModel
 from nanodrz.config import ModelConfig, Config
 from nanodrz.modules import ScaledSinusoidalEmbedding, Decoder
 from nanodrz.utils import to_device, make_padding_mask
@@ -127,13 +126,13 @@ class DiarizeGPT(Module):
         self,
         audio: Tensor,
         labels: Tensor,
-        audio_lengths: Tensor,
-        label_lengths: Tensor,
+        audio_T: Tensor,
+        label_T: Tensor,
     ):
         B = audio.shape[0]
 
         # DAC Z Latent Reduction factor
-        audio_lengths = audio_lengths // 320
+        audio_T = audio_T // 320
 
         with torch.no_grad():
             audio = self.dac.encode(audio)[0]
@@ -143,7 +142,7 @@ class DiarizeGPT(Module):
         text_embs = self.text_emb(labels)
 
         # view of the start and end tokens for each triplet in the sequence of coords
-        # [start, end, label, start, end, label, ...] 
+        # [start, end, label, start, end, label, ...]
         # [
         #   [start, end],
         #   [start, end]
@@ -155,24 +154,24 @@ class DiarizeGPT(Module):
             self.time_pos_emb(time_boundaries)
         )
         text_embs = text_embs + self.text_pos_emb(torch.arange(text_embs.shape[1]))
-        
+
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 
         embs = []
         for b in range(B):
             emb = torch.cat(
                 (
-                    audio[b, : audio_lengths[b]],
+                    audio[b, : audio_T[b]],
                     self.start_diarize_emb[None],
                     # We're predicting up to eos token (which is included in the sequence)
-                    text_embs[b, : label_lengths[b] - 1],
+                    text_embs[b, : label_T[b] - 1],
                 ),
                 dim=0,
             )
             embs.append(emb)
 
         # + 1 for diarization emb
-        seqlens = audio_lengths + label_lengths
+        seqlens = audio_T + label_T
         if self.config.model.use_flash_attn:
             embs = torch.cat(embs, dim=1)
             max_seqlen = audio.shape[1] + text_embs.shape[1]
@@ -183,13 +182,7 @@ class DiarizeGPT(Module):
             mask = ~make_padding_mask(seqlens)
             x = self.decoder(embs, mask=mask)
 
-        text_latents = []
-
-        for b in range(B):
-            text_latents.append(
-                x[b, audio_lengths[b] : audio_lengths[b] + label_lengths[b]]
-            )
-
+        text_latents = [x[b, audio_T[b] : audio_T[b] + label_T[b]] for b in range(B)]
         text_latents = pad_sequence(text_latents, batch_first=True)
         text_logits = self.text_head(text_latents).permute(0, 2, 1)
         loss = F.cross_entropy(text_logits, labels, ignore_index=self.pad_idx)
