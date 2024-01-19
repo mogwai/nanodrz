@@ -97,9 +97,11 @@ def artificial_drz_generator(
             interrupt_var=interrupt_var,
             num_speakers=num_speakers,
         )
-        audio = model.dac.preprocess(audio, model.dac.sample_rate)
+        audio = model.dac.preprocess(audio, sr)
 
-        assert audio.shape[-1] / sr < max_secs
+        if audio.shape[-1] / sr > max_secs:
+            print(audio.shape[-1], audio.shape[-1]/sr)
+            audio = audio[..., max_secs*sr:]
 
         yield audio, label
 
@@ -137,7 +139,7 @@ def artificial_diarisation_sample(
         random_sample = resample(ssr, sr, random_sample)
         random_sample = random.choice(find_nonsilence_chunks(random_sample, sr)[0])
     
-        if audio.shape[-1] / sr + random_sample.shape[-1] / sr > seconds:
+        if (audio.shape[-1] + random_sample.shape[-1]) / sr > seconds:
             break
 
         random_sample = random_sample.sum(dim=0)[None]
@@ -231,7 +233,6 @@ def libritts_test() -> list[Speaker]:
     return gather_speakers_from_folder(
         folder,
         lambda x: os.path.basename(x).split("_")[0],
-        # file_filters=[min_duration()]
     )
 
 
@@ -240,5 +241,4 @@ def libritts_dev() -> list[Speaker]:
     return gather_speakers_from_folder(
         folder,
         lambda x: os.path.basename(x).split("_")[0],
-        # file_filters=[min_duration()]
     )
