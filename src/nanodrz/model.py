@@ -18,56 +18,64 @@ class DiarizeGPT(Module):
     """
     Decoder Only
 
-    [DAC Z Latents {dmodel}] -> [ByT5 Text Encoder(Start, Duration, Label)]
+    [DAC Z Latents {dmodel}] -> [Quantized Start Sec, Quantized End Sec, Label
 
     """
 
-    def __init__(self, config: ModelConfig):
+    def __init__(self, config: Config):
         super().__init__()
-        self.config = config
 
-        # Get us a good starting point to save some time
-        self.text_tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_model)
-        self.text_emb = T5EncoderModel.from_pretrained(config.tokenizer_model).shared
+        self.config = config
+        modelcfg = config.model
+        dmodel = modelcfg.dmodel
+
+        # Let's predict at least 8 speakers
+        self.num_classes = 8
+
+        # From the Coordinate Qunatization notebook , we saw that we need 288 ~50ms errors on average
+        # Round to the nearest power of 2
+        self.num_embs = 512
+
+        # 2 for eos and pad 1 for
+        self.num_time_tokens = self.num_embs - (2 + self.num_classes)
+
+        self.eos_idx = 1
+        self.pad_idx = 0
+        self.text_emb = nn.Embedding(self.num_embs, dmodel)
+
+        self.text_head = nn.Linear(dmodel, self.num_embs)
 
         # Load DAC
-        model_path = dac.utils.download(model_type=config.dac_model)
+        model_path = dac.utils.download(model_type=modelcfg.dac_model)
         self.dac: dac.DAC = dac.DAC.load(model_path).eval()
 
-        self.start_diarize_emb = nn.Parameter(torch.zeros(config.dmodel))
+        self.start_diarize_emb = nn.Parameter(torch.zeros(dmodel))
 
-        self.eos_idx = self.text_tokenizer.eos_token_id
-        self.pad_idx = self.text_tokenizer.pad_token_id
-
-        self.text_head = nn.Linear(config.dmodel, self.text_tokenizer.vocab_size)
-        self.text_emb_projection = nn.Linear(self.text_emb.embedding_dim, config.dmodel)
-
-        if self.dac.latent_dim != config.dmodel:
-            self.audio_proj = nn.Linear(self.dac.codebook_size, config.dmodel)
+        self.audio_proj = nn.Linear(self.dac.latent_dim, dmodel)
 
         # Positional Encoding
-        self.audio_pos_emb = ScaledSinusoidalEmbedding(config.dmodel)
-        self.text_pos_emb = ScaledSinusoidalEmbedding(config.dmodel)
+        self.audio_pos_emb = ScaledSinusoidalEmbedding(dmodel)
+        self.text_pos_emb = ScaledSinusoidalEmbedding(dmodel)
+
+        # This is to embed the position of the time in the token representing the audio
+        self.time_pos_emb = ScaledSinusoidalEmbedding(dmodel)
 
         self.decoder = Decoder(
-            d_model=config.dmodel,
-            n_heads=config.nheads,
-            n_layers=config.layers,
-            bias=config.bias,
-            dropout=config.dropout,
+            d_model=dmodel,
+            n_heads=modelcfg.nheads,
+            n_layers=modelcfg.layers,
+            bias=modelcfg.bias,
+            dropout=modelcfg.dropout,
         )
 
         # We want to init only these modules and leave the rest
         self.init_mod_weights = [
             self.decoder,
             self.text_head,
-            self.text_emb_projection,
             self.audio_pos_emb,
             self.text_pos_emb,
+            self.audio_proj,
         ]
-
-        if self.dac.latent_dim != config.dmodel:
-            self.init_mod_weights += [self.audio_proj]
 
         for w in self.init_mod_weights:
             w.apply(self._init_weights)
@@ -77,7 +85,6 @@ class DiarizeGPT(Module):
     def _freeze_components(self):
         # Freeze DAC
         [p.requires_grad_(False) for p in self.dac.parameters()]
-        [p.requires_grad_(False) for p in self.text_emb.parameters()]
 
     def train(self, mode: bool = True):
         res = super().train(mode)
@@ -132,14 +139,20 @@ class DiarizeGPT(Module):
             audio = self.dac.encode(audio)[0]
             audio = rearrange(audio, "B L T -> B T L")
 
-        if self.dac.latent_dim != self.config.dmodel:
-            audio = self.audio_proj(audio)
+        audio = self.audio_proj(audio)
 
-        audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
+        # Quantized start, end follow by label
+
         text_embs = self.text_emb(labels)
-        text_embs = self.text_emb_projection(text_embs) + self.text_pos_emb(
-            torch.arange(text_embs.shape[1])
+        # view of the start and
+        time_boundaries = labels.view(B, -1, 3)[:, :, :2]
+        # Add concept of time to the time boundary tokens
+        rearrange(text_embs, "B (b s) L -> B b s L", s=3)[:, :, :2].add_(
+            self.time_pos_emb(time_boundaries)
         )
+        audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
+
+        text_embs = text_embs + self.text_pos_emb(torch.arange(text_embs.shape[1]))
 
         embs = []
         for b in range(B):
@@ -156,9 +169,9 @@ class DiarizeGPT(Module):
 
         # + 1 for diarization emb
         seqlens = audio_lengths + label_lengths
-        if self.config.use_flash_attn:
+        if self.config.model.use_flash_attn:
             embs = torch.cat(embs, dim=1)
-            max_seqlen = audio.shape[1] + labels.shape[1]
+            max_seqlen = audio.shape[1] + text_embs.shape[1]
             cu_seqlens = F.pad(seqlens.cumsum(0, dtype=torch.int32), (1, 0), value=0)
             x = self.decoder(embs, cu_seqlens, max_seqlen)
         else:
@@ -175,7 +188,7 @@ class DiarizeGPT(Module):
 
         text_latents = pad_sequence(text_latents, batch_first=True)
         text_logits = self.text_head(text_latents).permute(0, 2, 1)
-        loss = F.cross_entropy(text_logits, labels, ignore_index=self.pad_idx)
+        loss = F.cross_entropy(text_logits, text_embs, ignore_index=self.pad_idx)
 
         return {"loss": loss}
 
@@ -192,7 +205,7 @@ class DiarizeGPT(Module):
             audio = self.dac.encode(audio[None])[0]
             audio = rearrange(audio, "B L T -> B T L")
 
-        if self.dac.latent_dim != self.config.dmodel:
+        if self.dac.latent_dim != self.model.dmodel:
             audio = self.audio_proj(audio)
 
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
@@ -233,7 +246,6 @@ class DiarizeGPT(Module):
             emb = torch.cat((emb, next_emb), dim=1)
 
         return self.text_tokenizer.decode(torch.tensor(tokens))
-        
 
     @staticmethod
     def from_pretrained(ckpt: str | dict):
@@ -251,9 +263,9 @@ class DiarizeGPT(Module):
         """
         if type(ckpt) is str:
             ckpt = torch.load(ckpt)
-        
+
         config = Config(**ckpt["config"])
-        model = DiarizeGPT(config.model)
+        model = DiarizeGPT(config)
         model.load_state_dict(ckpt["model"], strict=False)
         return model
 
@@ -269,8 +281,8 @@ def main():
 
     device_type = "cuda"
 
-    config = ModelConfig()
-    model = DiarizeGPT(config).cuda()
+    model = ModelConfig()
+    config = DiarizeGPT(config).cuda()
     B = 2
     speakers = libritts_test()
 
@@ -279,7 +291,7 @@ def main():
 
     for _ in range(B):
         audio, label = artificial_diarisation_sample(speakers, max_secs=30, sr=16000)
-        audio = model.dac.preprocess(audio, model.dac.sample_rate)
+        audio = model.dac.preprocess(audio, config.model.dac.sample_rate)
         audios.append(rearrange(audio, "c s -> s c"))
         labels.append("\n".join([",".join([str(x) for x in l]) for l in label]))
 

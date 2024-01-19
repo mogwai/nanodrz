@@ -24,14 +24,17 @@
             "name": "Model",
             "type": "python",
             "request": "launch",
-            "module": "nanodiarization.model",
+            "module": "nanodrz.model",
             "justMyCode": true
         },
         {
             "name": "Train",
             "type": "python",
             "request": "launch",
-            "module": "nanodiarization.train",
+            "module": "nanodrz.train",
+            "args": [
+                "--dev"
+            ],
             "justMyCode": true
         }
     ]

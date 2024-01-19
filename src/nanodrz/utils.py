@@ -102,6 +102,7 @@ def prob_mask_like(shape, prob: float, device):
     else:
         return torch.zeros(shape, device=device).float().uniform_(0, 1) < prob
 
+
 def multinomial(input: Tensor, num_samples: int, replacement=False, *, generator=None):
     """torch.multinomial with arbitrary number of dimensions, and number of candidates on the last dimension.
 
@@ -169,6 +170,7 @@ def sample_top_p(probs: Tensor, p: float) -> Tensor:
     next_token = multinomial(probs_sort, num_samples=1)
     next_token = torch.gather(probs_idx, -1, next_token)
     return next_token
+
 
 def sha256(b: Union[float, list, Tensor, str, bytes, np.ndarray]):
     if isinstance(b, (int, list, float)):

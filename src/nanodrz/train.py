@@ -72,14 +72,14 @@ def train(rank: int, world_size: int, config: Config):
     device = torch.cuda.current_device()
 
 
-    model = Model(model_config)
+    model = Model(config)
     model.cuda(rank)
 
     ds = GeneratorIterableDataset(
         data.artificial_drz_generator(
             speakers, 
             model, 
-            datacfg.max_audio_duration,
+            datacfg.max_secs,
             datacfg.min_audio_duration,
             model.dac.sample_rate,
             interrupt_sec_mean=datacfg.interrupt_sec_mean,
@@ -88,7 +88,7 @@ def train(rank: int, world_size: int, config: Config):
         )
     )
     train_dl = DataLoader(
-        ds, batch_size=B, collate_fn=collate_fn, num_workers=datacfg.num_workers
+        ds, batch_size=B, collate_fn=collate_fn(model), num_workers=datacfg.num_workers
     )
     
     # We're not doing val yet
@@ -301,7 +301,7 @@ def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
     if config is None:
         config = Config()
 
-    config = load_config(config, edit)
+    config:Config = load_config(config, edit)
 
     config.train.torch_profile = config.train.torch_profile or profile
     config.train.wandb_watch = config.train.wandb_watch or watch
@@ -309,6 +309,7 @@ def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
     if dev:
         print("Running in dev mode (smaller dataset, batch size, fewer epochs, etc.)")
         config.train.val_every = 9
+        config.train.batch_size = 2
         config.train.total_steps = 10
         config.train.checkpoint_every = 11
         config.train.grad_acc_steps = 1

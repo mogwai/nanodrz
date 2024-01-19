@@ -17,8 +17,7 @@ dependencies = [
     "transformers",
     "tqdm",
     "pydantic",
-    "wandb",
-
+    "wandb"
 ]
 
 [tool.setuptools]

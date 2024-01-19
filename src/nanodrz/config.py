@@ -18,7 +18,6 @@ class ModelConfig(BaseModel):
     dropout: float = 0.2
     bias: bool = False
     max_seqlen: int = 8192
-    tokenizer_model: str = "google/byt5-small"
     dac_model: str = "16khz"
     sample_rate: int = 16000
     # Turn this on  this if you have an ampere GPU

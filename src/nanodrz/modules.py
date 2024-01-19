@@ -58,7 +58,7 @@ class Attention(nn.Module):
                 cross_attn=False,
                 causal=causal,
                 dropout=dropout,
-                use_flash_attn=False,
+                use_flash_attn=use_flash_attn,
                 layer_idx=layer_idx,
                 qkv_proj_bias=bias,
                 out_proj_bias=bias,
