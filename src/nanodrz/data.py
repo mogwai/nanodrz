@@ -58,10 +58,13 @@ def collate_fn(model: DiarizeGPT) -> callable:
                 l[0] = round(l[0] / Q) + 2  # EOS PAD
                 l[1] = round((start + l[1]) / Q) + 2
                 l[2] = model.num_embs - 1 - (ord(l[2]) - ord("A"))
+            
+            # Paper says 
+            random.shuffle(b)
         
         audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True)
         audios = audios.permute(0, 2, 1)
-        labels = [torch.tensor(l).flatten() for l in labels]
+        labels = [torch.tensor(l).flatten().long() for l in labels]
         label_lengths = [len(b) for b in labels]
         labels = pad_sequence(labels, batch_first=True)
 

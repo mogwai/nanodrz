@@ -189,8 +189,7 @@ def train(rank: int, world_size: int, config: Config):
                 with torch.amp.autocast(
                     enabled=True, device_type=device_type, dtype=dtype
                 ):
-                    out = model(**batch)
-                    loss = out["loss"]
+                    loss = model(**batch)
                     loss = loss / gradient_accumulation_steps
 
                 batch = to_device(next(train_dl_iter), device)

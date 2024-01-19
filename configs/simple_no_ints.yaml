@@ -2,4 +2,3 @@ data:
   interrupt_sec_mean: 0
   interrupt_var: 0
   num_speakers: 2
-  num_workers: 0
