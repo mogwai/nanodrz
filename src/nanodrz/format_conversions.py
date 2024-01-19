@@ -71,6 +71,7 @@ def convert_rttm(input_text:str):
 def str_to_labels(labels: str) -> list[str]:
     ret = []
     for l in labels.split("\n"):
+        # Start, Duration, Label
         ret.append(float(l[0]), float(l[1]), l[2])
     return ret
 

@@ -6,10 +6,16 @@ from typing import Union
 import numpy as np
 import torch
 import torch.distributed as dist
+import hashlib
+import os
+import pickle
+from functools import wraps
 import torch.nn as nn
 import torchaudio
 from torch import Tensor
 from torchaudio.transforms import Resample
+
+from nanodrz.constants import CACHE_DIR
 
 
 def count_parameters(model: nn.Module, nongrad=False):
@@ -203,63 +209,7 @@ def play(audio: [Tensor, np.ndarray, str], sr=44100, autoplay=True):
     display(Audio(audio.cpu().detach(), rate=sr, autoplay=autoplay))
 
 
-def find_nonsilence_chunks(
-    audio: Tensor, sr: int, silence_threshold=0.01, min_silence_len=0.2, min_chunk_len=1
-):
-    """
-    Finds and returns non-silence chunks in the given audio.
 
-    Args:
-        audio (Tensor): The audio waveform.
-        sr (int): The sample rate of the audio.
-        silence_threshold (float, optional): The threshold below which audio is considered as silence. Defaults to 0.01.
-        min_silence_len (float, optional): The minimum duration of silence to be considered as a separate chunk. Defaults to 0.2.
-        min_chunk_len (float, optional): The minimum duration of a non-silence chunk. Defaults to 1.
-
-    Returns:
-        List[Tensor]: A list of non-silence chunks.
-        List[Tuple[int, int]]: A list of tuples representing the start and end indexes of silence segments.
-    """
-    # Add min_silence_len+1 silence to the end of the audio
-    audio = torch.cat([audio, torch.zeros(1, int(sr * min_silence_len) + 1)], dim=-1)
-    amplitude = torch.abs(audio)
-    is_silence = amplitude < silence_threshold
-    silent_frames = is_silence.all(dim=0)
-
-    silence_indexes = []
-    start_idx = 0
-
-    for idx, is_silent in enumerate(silent_frames):
-        if is_silent and start_idx == -1:
-            start_idx = idx
-        elif not is_silent and start_idx != -1:
-            if (idx - start_idx) / sr >= min_silence_len:
-                silence_indexes.append((start_idx, idx))
-            start_idx = -1
-
-    if (
-        start_idx is not None
-        and (len(silent_frames) - start_idx) / sr >= min_silence_len
-    ):
-        silence_indexes.append((start_idx, len(silent_frames)))
-
-    chunks = []
-    cur_chunk = torch.zeros(1, 0)
-    cur_idx = 0
-
-    for b, e in silence_indexes:
-        cur_chunk = torch.cat([cur_chunk, audio[:, cur_idx:b]], dim=-1)
-        if cur_chunk.shape[-1] > sr * min_chunk_len:
-            cur_idx = e
-            chunks.append(cur_chunk)
-            cur_chunk = torch.zeros(1, 0)
-        else:
-            cur_idx = b
-
-    if cur_chunk.shape[-1] != 0:
-        chunks.append(cur_chunk)
-
-    return chunks, silence_indexes
 
 
 def to_device(obj: [nn.Module, Tensor, list, dict], targets: str | list[str]):
@@ -320,3 +270,92 @@ def autocast_support(dtype):
     except RuntimeError:
         return False
     return True
+
+
+
+def hash_arguments(args, kwargs):
+    arguments = list(args) + list(kwargs.keys()) + list(kwargs.values())
+    return "".join([sha256(b) for b in arguments])
+
+
+def cache(location=".cache") -> callable:
+    os.makedirs(location, exist_ok=True)
+
+    def inner_function(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            s = hash_arguments(args, kwargs)
+            key = f.__name__ + s
+            # Hash the args correctly
+            fname = sha256(key)
+            fname = os.path.join(location, fname)
+            if os.path.exists(fname):
+                with open(fname, "rb") as fl:
+                    return pickle.load(fl)
+            ret = f(*args, **kwargs)
+            with open(fname, "wb") as fl:
+                pickle.dump(ret, fl)
+            return ret
+
+        return wrapper
+
+    return inner_function
+
+@cache(os.path.join(CACHE_DIR, "find_non_silence_chunks"))
+def find_nonsilence_chunks(
+    audio: Tensor, sr: int, silence_threshold=0.01, min_silence_len=0.2, min_chunk_len=1
+):
+    """
+    Finds and returns non-silence chunks in the given audio.
+
+    Args:
+        audio (Tensor): The audio waveform.
+        sr (int): The sample rate of the audio.
+        silence_threshold (float, optional): The threshold below which audio is considered as silence. Defaults to 0.01.
+        min_silence_len (float, optional): The minimum duration of silence to be considered as a separate chunk. Defaults to 0.2.
+        min_chunk_len (float, optional): The minimum duration of a non-silence chunk. Defaults to 1.
+
+    Returns:
+        List[Tensor]: A list of non-silence chunks.
+        List[Tuple[int, int]]: A list of tuples representing the start and end indexes of silence segments.
+    """
+    # Add min_silence_len+1 silence to the end of the audio
+    audio = torch.cat([audio, torch.zeros(1, int(sr * min_silence_len) + 1)], dim=-1)
+    amplitude = torch.abs(audio)
+    is_silence = amplitude < silence_threshold
+    silent_frames = is_silence.all(dim=0)
+
+    silence_indexes = []
+    start_idx = 0
+
+    for idx, is_silent in enumerate(silent_frames):
+        if is_silent and start_idx == -1:
+            start_idx = idx
+        elif not is_silent and start_idx != -1:
+            if (idx - start_idx) / sr >= min_silence_len:
+                silence_indexes.append((start_idx, idx))
+            start_idx = -1
+
+    if (
+        start_idx is not None
+        and (len(silent_frames) - start_idx) / sr >= min_silence_len
+    ):
+        silence_indexes.append((start_idx, len(silent_frames)))
+
+    chunks = []
+    cur_chunk = torch.zeros(1, 0)
+    cur_idx = 0
+
+    for b, e in silence_indexes:
+        cur_chunk = torch.cat([cur_chunk, audio[:, cur_idx:b]], dim=-1)
+        if cur_chunk.shape[-1] > sr * min_chunk_len:
+            cur_idx = e
+            chunks.append(cur_chunk)
+            cur_chunk = torch.zeros(1, 0)
+        else:
+            cur_idx = b
+
+    if cur_chunk.shape[-1] != 0:
+        chunks.append(cur_chunk)
+
+    return chunks, silence_indexes

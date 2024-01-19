@@ -140,19 +140,23 @@ class DiarizeGPT(Module):
             audio = rearrange(audio, "B L T -> B T L")
 
         audio = self.audio_proj(audio)
-
-        # Quantized start, end follow by label
-
         text_embs = self.text_emb(labels)
-        # view of the start and
+
+        # view of the start and end tokens for each triplet in the sequence of coords
+        # [start, end, label, start, end, label, ...] 
+        # [
+        #   [start, end],
+        #   [start, end]
+        #   ...
+        # ]
         time_boundaries = labels.view(B, -1, 3)[:, :, :2]
         # Add concept of time to the time boundary tokens
         rearrange(text_embs, "B (b s) L -> B b s L", s=3)[:, :, :2].add_(
             self.time_pos_emb(time_boundaries)
         )
-        audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
-
         text_embs = text_embs + self.text_pos_emb(torch.arange(text_embs.shape[1]))
+        
+        audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 
         embs = []
         for b in range(B):
