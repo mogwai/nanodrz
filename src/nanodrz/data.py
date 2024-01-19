@@ -1,6 +1,7 @@
 import glob
 import itertools
 import os
+import math
 import random
 import time
 from dataclasses import dataclass
@@ -13,7 +14,8 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import IterableDataset
 
 from nanodrz import download
-from nanodrz.utils import resample
+from nanodrz.model import DiarizeGPT
+from nanodrz.utils import resample, find_nonsilence_chunks
 
 
 @dataclass
@@ -42,21 +44,34 @@ class GeneratorIterableDataset(IterableDataset):
         return iter(self.generator)
 
 
-def collate_fn(batch):
-    audios = [b[0] for b in batch]
-    audio_lengths = [a.shape[-1] for a in audios]
-    labels = [b[1][0] for b in batch]
-    label_lengths = [l.shape[-1] for l in labels]
-    audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True).permute(
-        0, 2, 1
-    )
-    labels = pad_sequence(labels, batch_first=True)
-    return {
-        "audio": audios,
-        "labels": labels,
-        "audio_lengths": torch.tensor(audio_lengths),
-        "label_lengths": torch.tensor(label_lengths),
-    }
+def collate_fn(model: DiarizeGPT) -> callable:
+    def _collate(batch):
+        audios = [b[0] for b in batch]
+        audio_lengths = [a.shape[-1] for a in audios]
+        labels = [b[1] for b in batch]
+
+        Q = model.config.data.max_secs / model.num_time_tokens
+
+        for b in labels:    
+            for l in b:
+                start = l[0]
+                l[0] = round(l[0] / Q) + 2  # EOS PAD
+                l[1] = round((start + l[1]) / Q) + 2
+                l[2] = model.num_embs - 1 - (ord(l[2]) - ord("A"))
+        
+        label_lengths = [len(b) for b in labels]
+        audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True)
+        audios = audios.permute(0, 2, 1)
+        labels = pad_sequence([torch.tensor(l).flatten() for l in labels], batch_first=True)
+
+        return {
+            "audio": audios,
+            "labels": labels,
+            "audio_lengths": torch.tensor(audio_lengths),
+            "label_lengths": torch.tensor(label_lengths),
+        }
+
+    return _collate
 
 
 def artificial_drz_generator(
@@ -80,7 +95,9 @@ def artificial_drz_generator(
             num_speakers=num_speakers,
         )
         audio = model.dac.preprocess(audio, model.dac.sample_rate)
-        label = "\n".join([",".join([str(x) for x in l]) for l in label])
+
+        assert audio.shape[-1] / sr < max_secs
+
         yield audio, label
 
 
@@ -89,7 +106,7 @@ def artificial_diarisation_sample(
     max_secs=30,
     min_secs=7.5,
     interrupt_sec_mean=0.2,
-    silence_max=.2,
+    silence_max=0.2,
     num_speakers=4,
     sr=16000,
     **kwargs,
@@ -108,18 +125,24 @@ def artificial_diarisation_sample(
 
         if speaker.name == last_speaker:
             continue
-
+        
         last_speaker = speaker.name
 
         # Pick a random sample
         random_sample_file = random.choice(speaker.utts).file_url
         random_sample, ssr = torchaudio.load(random_sample_file)
-        random_sample = random_sample.sum(dim=0)[None]
         random_sample = resample(ssr, sr, random_sample)
+        random_sample = random.choice(find_nonsilence_chunks(random_sample, sr)[0])
     
+        if audio.shape[-1] / sr + random_sample.shape[-1] / sr > seconds:
+            break
+
+        random_sample = random_sample.sum(dim=0)[None]
+
         int_range = min(
             interrupt_sec_mean, audio.shape[-1] / sr, random_sample.shape[-1] / sr
         )
+        
         cut_point = int(random.uniform(-int_range, silence_max) * sr)
         start_label = audio.shape[-1] / sr + cut_point / sr
 
@@ -135,13 +158,15 @@ def artificial_diarisation_sample(
 
         name_label = chr(ord("A") + i)
 
+        if start_label > 60:
+            breakpoint()
+        
         labels.append([start_label, random_sample.shape[-1] / sr, name_label])
 
     return audio, labels
 
 
 def gather_speakers_from_folder(
-        
     folder: str,
     retrieve_speaker: callable,
     exts: list[str] = ["wav", "opus", "mp3"],
@@ -165,9 +190,6 @@ def gather_speakers_from_folder(
         speaker_name = retrieve_speaker(file)
         utt = Utterance()
         utt.file_url = file
-        # info = torchaudio.info(file)
-        # utt.sr = info.sample_rate
-        # utt.seconds = info.num_frames / info.sample_rate
 
         stop = False
         for check in file_filters:
@@ -190,7 +212,8 @@ def gather_speakers_from_folder(
             speaker.name = speaker_name
             speakers.append(speaker)
             speaker.utts = []
-
+        
+        
         speaker.utts.append(utt)
 
     return speakers
