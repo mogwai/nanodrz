@@ -54,9 +54,8 @@ def collate_fn(model: DiarizeGPT) -> callable:
 
         for b in labels:    
             for l in b:
-                start = l[0]
+                l[1] = round((l[0] + l[1]) / Q) + 2
                 l[0] = round(l[0] / Q) + 2  # EOS PAD
-                l[1] = round((start + l[1]) / Q) + 2
                 l[2] = model.num_embs - 1 - (ord(l[2]) - ord("A"))
             
             # Pix2Seq said this produced the best result
