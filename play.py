@@ -1,6 +1,5 @@
-from nanodrz import optim
+from nanodrz.modules import Attention
+import torch
 
-
-
-# Import function from this module in code with a string:
-getattr(optim, "warmup_then_cosine_decay")
+att = Attention(1024, 16, .2)
+att(torch.rand(1, 64, 1024), None)

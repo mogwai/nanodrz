@@ -10,7 +10,6 @@ dependencies = [
     "click",
     "descript-audio-codec",
     "einop",
-    "memory_efficient_attention_pytorch",
     "textgrid",
     "torch",
     "torchaudio",

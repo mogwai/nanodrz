@@ -3,6 +3,7 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 from flash_attn.modules.mha import MHA
 from memory_efficient_attention_pytorch import Attention as MemoryEfficientAttention
+from einops import rearrange
 from flash_attn.utils.generation import InferenceParams
 import torch
 
@@ -39,56 +40,40 @@ class Attention(nn.Module):
 
     def __init__(
         self,
-        d_model: int,
-        n_heads: int,
-        bias: bool,
-        dropout: float,
-        causal: bool,
-        layer_idx: int | None = None,
-        rotary_emb_dim: int = 0,
-        use_flash_attn: bool = False,
+        dmodel: int = 1024,
+        n_heads: int = 16,
+        dropout: float = 0.0,
+        causal: bool = True,
+        flash: bool = True,
+        bias: bool = False,
     ):
         super().__init__()
-        self.use_flash_attn = use_flash_attn
+        assert dmodel % n_heads == 0
+        self.qkv = nn.Linear(dmodel, 3 * dmodel, bias=bias)
+        self.c_proj = nn.Linear(dmodel, dmodel, bias=bias)
+        self.attn_dropout = nn.Dropout(dropout)
+        self.resid_dropout = nn.Dropout(dropout)
+        self.n_head = n_heads
+        self.n_embd = dmodel
+        self.flash = flash
+        self.dropout = dropout
+        self.causal = causal
 
-        if use_flash_attn:
-            self.attn = MHA(
-                d_model,
-                n_heads,
-                cross_attn=False,
-                causal=causal,
-                dropout=dropout,
-                use_flash_attn=use_flash_attn,
-                layer_idx=layer_idx,
-                qkv_proj_bias=bias,
-                out_proj_bias=bias,
-                rotary_emb_dim=rotary_emb_dim,
-            )
-        else:
-            self.attn = MemoryEfficientAttention(
-                dim=d_model,
-                heads=n_heads,
-                dropout=dropout,
-                causal=True,
-                memory_efficient=True,
-            )
+    def forward(self, x, mask=None):
+        B, T, C = x.size()
+        q, k, v = rearrange(self.qkv(x), "B T (S H L) -> S B H T L", S=3, H=self.n_head)
+        y = torch.nn.functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=mask,
+            dropout_p=self.dropout if self.training else 0,
+            is_causal=self.causal,
+        )
 
-    def forward(
-        self,
-        x: Tensor,
-        cu_seqlens: Tensor | None = None,
-        max_seqlen: int | None = None,
-        inference_params: InferenceParams | None = None,
-        mask: Tensor = None,
-    ):
-        if self.use_flash_attn:
-            return self.attn(
-                cu_seqlens=cu_seqlens,
-                max_seqlen=max_seqlen,
-                inference_params=inference_params,
-            )
-        else:
-            return self.attn(x, mask=mask)
+        y = y.transpose(1, 2).contiguous().view(B, T, C)
+        y = self.resid_dropout(self.c_proj(y))
+        return y
 
 
 class TransformerBlock(nn.Module):
@@ -98,44 +83,20 @@ class TransformerBlock(nn.Module):
         n_heads: int,
         bias: bool,
         dropout: float,
-        layer_idx: int | None = None,
         causal: bool = True,
-        rotary_emb: bool = False,
-        use_flash_attn: bool = False,
     ):
         super().__init__()
-
-        rotary_emb_dim = d_model if rotary_emb else 0
-
         self.attn_norm = LayerNorm(d_model, bias=bias)
-        self.attn = Attention(
-            d_model,
-            n_heads,
-            bias,
-            dropout,
-            causal,
-            layer_idx,
-            rotary_emb_dim,
-            use_flash_attn,
-        )
+        self.attn = Attention(d_model, n_heads, bias, dropout, causal)
         self.mlp_norm = LayerNorm(d_model, bias=bias)
         self.mlp = MLP(d_model, bias, dropout)
 
     def forward(
         self,
         x: Tensor,
-        cu_seqlens: Tensor | None = None,
-        max_seqlen: int | None = None,
-        inference_params: InferenceParams | None = None,
         mask: Tensor = None,
     ) -> Tensor:
-        x = x + self.attn(
-            self.attn_norm(x),
-            cu_seqlens=cu_seqlens,
-            max_seqlen=max_seqlen,
-            inference_params=inference_params,
-            mask=mask,
-        )
+        x = x + self.attn(self.attn_norm(x), mask=mask)
         x = x + self.mlp(self.mlp_norm(x))
         return x
 
