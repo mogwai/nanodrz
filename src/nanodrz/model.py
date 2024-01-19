@@ -170,16 +170,8 @@ class DiarizeGPT(Module):
             )
             embs.append(emb)
 
-        seqlens = audio_lengths + label_lengths
-        if self.config.model.use_flash_attn:
-            embs = torch.cat(embs, dim=1)
-            max_seqlen = audio.shape[1] + text_embs.shape[1]
-            cu_seqlens = F.pad(seqlens.cumsum(0, dtype=torch.int32), (1, 0), value=0)
-            x = self.decoder(embs, cu_seqlens, max_seqlen)
-        else:
-            embs = pad_sequence(embs, batch_first=True)
-            mask = ~make_padding_mask(seqlens)
-            x = self.decoder(embs, mask=mask)
+        embs = pad_sequence(embs, batch_first=True)
+        x = self.decoder(embs)
 
         text_latents = [x[b, audio_lengths[b] : audio_lengths[b] + label_lengths[b]] for b in range(B)]
         text_latents = pad_sequence(text_latents, batch_first=True)

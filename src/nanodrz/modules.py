@@ -1,10 +1,7 @@
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
-from flash_attn.modules.mha import MHA
-from memory_efficient_attention_pytorch import Attention as MemoryEfficientAttention
 from einops import rearrange
-from flash_attn.utils.generation import InferenceParams
 import torch
 
 
@@ -42,10 +39,10 @@ class Attention(nn.Module):
         self,
         dmodel: int = 1024,
         n_heads: int = 16,
+        bias: bool = False,
         dropout: float = 0.0,
         causal: bool = True,
         flash: bool = True,
-        bias: bool = False,
     ):
         super().__init__()
         assert dmodel % n_heads == 0
@@ -61,14 +58,18 @@ class Attention(nn.Module):
 
     def forward(self, x, mask=None):
         B, T, C = x.size()
-        q, k, v = rearrange(self.qkv(x), "B T (S H L) -> S B H T L", S=3, H=self.n_head)
+
+        einop = "B T (split heads hs) -> split B heads T hs"
+        q, k, v = rearrange(
+            self.qkv(x), einop, heads=self.n_head, split=3
+        )
         y = torch.nn.functional.scaled_dot_product_attention(
             q,
             k,
             v,
-            attn_mask=mask,
             dropout_p=self.dropout if self.training else 0,
             is_causal=self.causal,
+            attn_mask=mask,
         )
 
         y = y.transpose(1, 2).contiguous().view(B, T, C)
@@ -117,10 +118,8 @@ class Decoder(nn.Module):
         self.drop = nn.Dropout(dropout)
         self.blocks = nn.ModuleList(
             [
-                TransformerBlock(
-                    d_model, n_heads, bias, dropout, layer_idx=layer_idx, causal=causal
-                )
-                for layer_idx in range(n_layers)
+                TransformerBlock(d_model, n_heads, bias, dropout, causal=causal)
+                for _ in range(n_layers)
             ]
         )
         self.norm_f = LayerNorm(d_model, bias=bias)
@@ -128,24 +127,14 @@ class Decoder(nn.Module):
     def forward(
         self,
         x: Tensor,
-        cu_seqlens: Tensor | None = None,
-        max_seqlen: int | None = None,
         mask: Tensor = None,
-        inference_params: InferenceParams | None = None,
     ):
         x = self.drop(x)
 
         for block in self.blocks:
-            x = block(
-                x,
-                cu_seqlens=cu_seqlens,
-                max_seqlen=max_seqlen,
-                inference_params=inference_params,
-            )
+            x = block(x, mask)
 
-        x = self.norm_f(x)  # (T_total, d_model) or (B, T, d_model)
-
-        return x
+        return self.norm_f(x)
 
 
 class ScaledSinusoidalEmbedding(nn.Module):
