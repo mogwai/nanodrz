@@ -8,6 +8,7 @@ import torch
 import torch.multiprocessing as mp
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 
 import wandb
@@ -15,9 +16,7 @@ from nanodrz import data, utils
 from nanodrz.config import Config, ModelConfig, load_config
 from nanodrz.data import GeneratorIterableDataset, collate_fn
 from nanodrz.model import DiarizeGPT as Model
-from nanodrz.optim import (warmup_then_constant, warmup_then_cosine_decay,
-                           warmup_then_inv_sqrt_decay,
-                           warmup_then_linear_decay)
+from nanodrz import optim
 from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
 
 
@@ -133,14 +132,7 @@ def train(rank: int, world_size: int, config: Config):
         if is_main_process:
             wandb.log(*args, **kwargs)
 
-    if train.lr_schedule == "warmup_then_linear_decay":
-        get_lr = warmup_then_linear_decay
-    elif train.lr_schedule == "warmup_then_cosine_decay":
-        get_lr = warmup_then_cosine_decay
-    elif train.lr_schedule == "warmup_then_inv_sqrt_decay":
-        get_lr = warmup_then_inv_sqrt_decay
-    else:
-        get_lr = warmup_then_constant
+    get_lr = getattr(optim, train.lr_schedule)
 
     wait, warmup, active = 5, 5, 5
     steps = wait + warmup + active if train.torch_profile else train.total_steps
@@ -195,9 +187,7 @@ def train(rank: int, world_size: int, config: Config):
                 batch = to_device(next(train_dl_iter), device)
                 loss.backward()
 
-            grad_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), train.max_grad_norm
-            )
+            grad_norm = clip_grad_norm_(model.parameters(), train.max_grad_norm)
 
             optimizer.step()
             optimizer.zero_grad()

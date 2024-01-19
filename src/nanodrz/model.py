@@ -200,7 +200,7 @@ class DiarizeGPT(Module):
         self,
         audio: Tensor,
         temperature=0.8,
-        max_steps=400,
+        max_steps=100,
         top_k: int = 10,
         top_p: float = 0.0,
     ):
@@ -208,8 +208,7 @@ class DiarizeGPT(Module):
             audio = self.dac.encode(audio[None])[0]
             audio = rearrange(audio, "B L T -> B T L")
 
-        if self.dac.latent_dim != self.model.dmodel:
-            audio = self.audio_proj(audio)
+        audio = self.audio_proj(audio)
 
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 

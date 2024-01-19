@@ -1,6 +1,10 @@
+"""
+Conversion to and from various formats. 
+"""
+
 import textgrid
 
-# TODO Remove this object
+# TODO OOP Bad remove this
 class Segment:
     def __init__(self, uttid, spkr, stime, etime, text):
         self.uttid = uttid

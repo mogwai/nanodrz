@@ -7,6 +7,7 @@ speakers = libritts_test()
 ckpt = torch.load("/home/harry/0000100.pt")
 config = Config(**ckpt["config"])
 model:DiarizeGPT = DiarizeGPT.from_pretrained(ckpt)
+# Use the same parameters that the model was trained on to generate a sample
 audio, labels = artificial_diarisation_sample(speakers, **config.data.model_dump())
 out = model.generate(audio)
 x = 1
