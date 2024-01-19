@@ -59,7 +59,7 @@ def collate_fn(model: DiarizeGPT) -> callable:
                 l[1] = round((start + l[1]) / Q) + 2
                 l[2] = model.num_embs - 1 - (ord(l[2]) - ord("A"))
             
-            # Paper says 
+            # Pix2Seq said this produced the best result
             random.shuffle(b)
         
         audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True)
