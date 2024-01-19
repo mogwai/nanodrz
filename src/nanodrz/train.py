@@ -70,9 +70,7 @@ def train(rank: int, world_size: int, config: Config):
     torch.cuda.set_device(rank)
     device = torch.cuda.current_device()
 
-
-    model = Model(config)
-    model.cuda(rank)
+    model = Model(config).cuda(rank)
 
     ds = GeneratorIterableDataset(
         data.artificial_drz_generator(
@@ -159,8 +157,9 @@ def train(rank: int, world_size: int, config: Config):
 
     loss = 0.0
     hours_seen = 0.0
+
     if is_main_process:
-        print(f"Took {time.time() - start_time:.2f}s to hit training loop")
+        print(f"Took {time.time() - start_time:.2f}s to hit training")
 
     with prof:
         while step < steps:
@@ -186,6 +185,9 @@ def train(rank: int, world_size: int, config: Config):
 
                 batch = to_device(next(train_dl_iter), device)
                 loss.backward()
+            
+            if is_main_process and step == 0:
+                print(f"Took {time.time() - start_time:.2f}s to finish first step training loop")
 
             grad_norm = clip_grad_norm_(model.parameters(), train.max_grad_norm)
 
