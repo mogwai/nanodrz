@@ -126,13 +126,13 @@ class DiarizeGPT(Module):
         self,
         audio: Tensor,
         labels: Tensor,
-        audio_T: Tensor,
-        label_T: Tensor,
+        audio_lengths: Tensor,
+        label_lengths: Tensor,
     ):
         B = audio.shape[0]
 
         # DAC Z Latent Reduction factor
-        audio_T = audio_T // 320
+        audio_lengths = audio_lengths // 320
 
         with torch.no_grad():
             audio = self.dac.encode(audio)[0]
@@ -161,17 +161,16 @@ class DiarizeGPT(Module):
         for b in range(B):
             emb = torch.cat(
                 (
-                    audio[b, : audio_T[b]],
+                    audio[b, : audio_lengths[b]],
                     self.start_diarize_emb[None],
                     # We're predicting up to eos token (which is included in the sequence)
-                    text_embs[b, : label_T[b] - 1],
+                    text_embs[b, : label_lengths[b] - 1],
                 ),
                 dim=0,
             )
             embs.append(emb)
 
-        # + 1 for diarization emb
-        seqlens = audio_T + label_T
+        seqlens = audio_lengths + label_lengths
         if self.config.model.use_flash_attn:
             embs = torch.cat(embs, dim=1)
             max_seqlen = audio.shape[1] + text_embs.shape[1]
@@ -182,7 +181,7 @@ class DiarizeGPT(Module):
             mask = ~make_padding_mask(seqlens)
             x = self.decoder(embs, mask=mask)
 
-        text_latents = [x[b, audio_T[b] : audio_T[b] + label_T[b]] for b in range(B)]
+        text_latents = [x[b, audio_lengths[b] : audio_lengths[b] + label_lengths[b]] for b in range(B)]
         text_latents = pad_sequence(text_latents, batch_first=True)
         text_logits = self.text_head(text_latents).permute(0, 2, 1)
         loss = F.cross_entropy(text_logits, labels, ignore_index=self.pad_idx)

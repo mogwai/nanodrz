@@ -134,6 +134,7 @@ class TransformerBlock(nn.Module):
             cu_seqlens=cu_seqlens,
             max_seqlen=max_seqlen,
             inference_params=inference_params,
+            mask=mask,
         )
         x = x + self.mlp(self.mlp_norm(x))
         return x
