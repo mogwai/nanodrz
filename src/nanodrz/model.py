@@ -188,9 +188,8 @@ class DiarizeGPT(Module):
 
         text_latents = pad_sequence(text_latents, batch_first=True)
         text_logits = self.text_head(text_latents).permute(0, 2, 1)
-        loss = F.cross_entropy(text_logits, text_embs, ignore_index=self.pad_idx)
-
-        return {"loss": loss}
+        loss = F.cross_entropy(text_logits, labels, ignore_index=self.pad_idx)
+        return loss
 
     @torch.inference_mode()
     def generate(

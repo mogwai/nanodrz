@@ -59,10 +59,11 @@ def collate_fn(model: DiarizeGPT) -> callable:
                 l[1] = round((start + l[1]) / Q) + 2
                 l[2] = model.num_embs - 1 - (ord(l[2]) - ord("A"))
         
-        label_lengths = [len(b) for b in labels]
         audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True)
         audios = audios.permute(0, 2, 1)
-        labels = pad_sequence([torch.tensor(l).flatten() for l in labels], batch_first=True)
+        labels = [torch.tensor(l).flatten() for l in labels]
+        label_lengths = [len(b) for b in labels]
+        labels = pad_sequence(labels, batch_first=True)
 
         return {
             "audio": audios,
