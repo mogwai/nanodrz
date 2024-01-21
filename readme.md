@@ -12,7 +12,7 @@ At the highest level, the idea here is that if we as humans were to listen to ra
 
 The basic idea is that we're taking a very compressed version of the the audio and predicting of 3 tokens for each section of speech. The first two tokens are the start and end quantized time tokens, the third being the speaker that spoke (A, B, C, ...).
 
-Let's say we have 512 possible tokens, the first 2 are for end of sequence and padding. The last set of tokens are reserved the number of speakers that we can predict. To keep this simple, we're generated synthetic samples with 2 speakers < 30 seconds. This means that the tokens in between index 2 and 509 are for time embeddings. We quantize the continuous timestamps 0.2, 2.5 etc into fixed integers. (Look at the Coordinate Quantization notebook)
+Let's say we have 512 possible tokens, the first 2 are for end of sequence and padding. The last set of tokens are reserved the number of speakers that we can predict. To keep this simple, we're generated synthetic samples with 2 speakers < 30 seconds. This means that the tokens in between index 2 and 509 are for time embeddings. We quantize the continuous timestamps 0.2, 2.5 etc into fixed integers. (Look at the [Coordinate Quantization Notebook](https://github.com/mogwai/nanodrz/blob/master/notebook/Coordinate%20Quantization.ipynb))
 
 So our sequence for our decoder only transformer is:
 
