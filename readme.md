@@ -20,6 +20,9 @@ So our sequence for our decoder only transformer is:
 audio token, audio token, ... , start_diairise_cmd_token, start, end, label, start, end, label, ..., eos
 ```
 
+![Labels Visualization](imgs/labels_viz.png)
+
+
 ### What about mapping A and B to real speakers.
 
 Great question, we'll still need a second phase to do this so that we know who A and B are. But these speaker ID models are quite good now so giving it a few diarized sections to indentify who A is will hopefully work.
