@@ -193,7 +193,7 @@ def sha256(b: Union[float, list, Tensor, str, bytes, np.ndarray]):
         raise Exception("Not implemented a method to handle {0}".format(type(b)))
 
 
-def play(audio: [Tensor, np.ndarray, str], sr=44100, autoplay=True):
+def play(audio: [Tensor, np.ndarray, str], sr=16000, autoplay=True):
     from IPython.display import Audio, display
 
     assert audio.numel() > 100, "play() needs a non empty audio array"
