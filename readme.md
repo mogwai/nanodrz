@@ -1,10 +1,10 @@
 # Nano Diarization - WIP!
 
-Trying as much as possible to keep it simple in this repo
-
-Partially inspired by [Pix2Seq](https://ai.googleblog.com/2022/04/pix2seq-new-language-interface-for.html)
+[Pix2Seq](https://ai.googleblog.com/2022/04/pix2seq-new-language-interface-for.html) for Speaker Diarization.
 
 # Overview
+
+Diarization models in the wild currently combine a variety of models and are quite complex. [Whisper](https://arxiv.org/pdf/2212.04356.pdf) showed it was possible to diarize with transformers in a more simple way however wasn't as good as mainstream approaches for diarization, especially on overlapping speech. This approach attempts to use synthetic data to experiment with overlapping speech difficulty and notably uses new audio compression techniques to 
 
 ### Architecture
 
@@ -22,7 +22,11 @@ audio token, audio token, ... , start_diairise_cmd_token, start, end, label, sta
 
 ### What about mapping A and B to real speakers.
 
-Great question, we'll still need a second phase to do this so that we know who A and B are. But these speaker ID models are quite good now so giving it a few diarized sections to indentify who A is will hopefully work
+Great question, we'll still need a second phase to do this so that we know who A and B are. But these speaker ID models are quite good now so giving it a few diarized sections to indentify who A is will hopefully work.
+
+### Why synthetic data?
+
+Transformers need a lot of data and this way we can make datasets on the fly without our models being able to overfit. It also make researching how approaches perform against harder problems (overlapping speech) which I don't think there is enough good real data in the wild to train a transformer on. 
 
 ### How to deal with longer audio
 
@@ -49,7 +53,7 @@ pip install -e .
 ### Train
 
 ```sh
-train configs/simple_no_ints.yaml
+train
 ```
 
 ### Inference
