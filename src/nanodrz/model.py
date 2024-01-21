@@ -47,7 +47,7 @@ class DiarizeGPT(Module):
         # Load DAC
         model_path = dac.utils.download(model_type=modelcfg.dac_model)
         self.dac: dac.DAC = dac.DAC.load(model_path).eval()
-        
+
         # We're not in need of this as we're not converting back to audio.
         del self.dac.decoder
 
@@ -176,7 +176,10 @@ class DiarizeGPT(Module):
         embs = pad_sequence(embs, batch_first=True)
         x = self.decoder(embs)
 
-        text_latents = [x[b, audio_lengths[b] : audio_lengths[b] + label_lengths[b]] for b in range(B)]
+        text_latents = [
+            x[b, audio_lengths[b] : audio_lengths[b] + label_lengths[b]]
+            for b in range(B)
+        ]
         text_latents = pad_sequence(text_latents, batch_first=True)
         text_logits = self.text_head(text_latents).permute(0, 2, 1)
         loss = F.cross_entropy(text_logits, labels, ignore_index=self.pad_idx)
@@ -187,9 +190,12 @@ class DiarizeGPT(Module):
         self,
         audio: Tensor,
         temperature=0.8,
-        max_steps=100,
-        top_k: int = 10,
+        # Total number of labels * 3
+        # Must be a multiple of 3
+        max_steps=3*10,
+        top_k: int = 100,
         top_p: float = 0.0,
+        repetion_penalty=1,
     ):
         with torch.no_grad():
             audio = self.dac.encode(audio[None])[0]
@@ -201,19 +207,42 @@ class DiarizeGPT(Module):
 
         emb = torch.cat((audio, self.start_diarize_emb[None][None]), dim=1)
 
-        tokens = []
-        for _ in range(max_steps):
+        tokens = torch.zeros(0,dtype=torch.long).cuda()
+
+        for step in range(max_steps):
             latents = self.decoder(emb)[:, [-1], :]
             logits = self.text_head(latents)
+
+            # We never want to predict the padding token
             logits[..., 0] = -1e9
 
-            # if repetition_penalty != 1.0:
-            #     begin = max(0, offset - repetition_penalty_window)
+            # We know that we're predicting start, end, label
+            # So we can make eos and label no predictable
+            if step % 3 != 0 or step == 0:
+                # Prevent EOS
+                logits[..., 1] = -1e9
 
-            #     score = torch.gather(logits, -1, sequence[[0], :, begin:offset])
-            #     # if score < 0 then repetition penalty has to be multiplied to reduce the previous token probability
-            #     score = torch.where(score <= 0.0, score * repetition_penalty, score / repetition_penalty)
-            #     logits = logits.scatter(-1, sequence[[0], :, begin:offset], score)
+            # Class prediction steps
+            if (step-2) % 3 == 0:
+                # Prevent time step predictions
+                logits[..., : -self.num_classes] = -1e9
+                # Prevent penalty for repeating classes
+                repetion_penalty = 1
+            else:
+                # Prevent class prediction
+                logits[..., -self.num_classes :] = -1e9
+                # Enable Penalty for repeating time steps
+                repetion_penalty = 2
+
+            # Repetition Penalty should be high because for the simple solution we're never
+            # predicting the same time step 
+            # class prediciton steps should have no penalty!)
+            if repetion_penalty != 1:
+                _tokens = rearrange(tokens, "T -> 1 1 T")
+                score = torch.gather(logits, -1, _tokens)
+                # if score < 0 then repetition penalty has to be multiplied to reduce the previous token probability
+                score = torch.where(score <= 0.0, score * repetion_penalty, score / repetion_penalty)
+                logits = logits.scatter(-1, _tokens, score)
 
             probs = F.softmax(logits / temperature, dim=-1)
             eos_probs = probs[..., self.eos_idx]
@@ -228,13 +257,12 @@ class DiarizeGPT(Module):
             else:
                 next_token = utils.multinomial(probs, num_samples=1)
 
-            next_token = next_token.flatten()
-            tokens.append(next_token.item())
-
-            next_emb = self.text_emb_projection(self.text_emb(next_token))[None]
+            next_token = next_token.flatten().long()
+            tokens = torch.cat([tokens, next_token])
+            next_emb = self.text_emb(next_token)[None]
             emb = torch.cat((emb, next_emb), dim=1)
 
-        return self.text_tokenizer.decode(torch.tensor(tokens))
+        return torch.tensor(tokens)
 
     @staticmethod
     def from_pretrained(ckpt: str | dict):
