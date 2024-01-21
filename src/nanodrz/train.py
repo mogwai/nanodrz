@@ -31,7 +31,7 @@ def train(rank: int, world_size: int, config: Config):
     start_time = time.time()
 
     train = config.train
-    
+
     datacfg = config.data
 
     assert config.run_dir is not None
@@ -41,26 +41,30 @@ def train(rank: int, world_size: int, config: Config):
 
     if is_main_process:
         wandb.init(
-            project="nano-diarization", 
-            config=config.model_dump(), 
-            settings=wandb.Settings()
+            project="nano-diarization",
+            config=config.model_dump(),
+            settings=wandb.Settings(),
         )
 
     # Get Speakers
     speakers = data.libritts_test() + data.libritts_dev()
 
-    print(f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}")
+    print(
+        f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
+    )
 
     seed_all(config.seed)
 
     device_type = "cuda"
-    
+
     # Test what dtype we can use
     if train.amp_dtype is None:
-        dtype = torch.bfloat16 if utils.autocast_support(torch.bfloat16) else torch.float16
+        dtype = (
+            torch.bfloat16 if utils.autocast_support(torch.bfloat16) else torch.float16
+        )
     else:
         dtype = torch.bfloat16 if train.amp_dtype == "bfloat16" else torch.float16
-    
+
     torch.cuda.set_device(rank)
     device = torch.cuda.current_device()
 
@@ -68,8 +72,8 @@ def train(rank: int, world_size: int, config: Config):
 
     ds = GeneratorIterableDataset(
         data.artificial_drz_generator(
-            speakers, 
-            model, 
+            speakers,
+            model,
             datacfg.max_secs,
             datacfg.min_audio_duration,
             model.dac.sample_rate,
@@ -79,9 +83,14 @@ def train(rank: int, world_size: int, config: Config):
         )
     )
     train_dl = DataLoader(
-        ds, batch_size=B, collate_fn=collate_fn(model), num_workers=datacfg.num_workers
+        ds,
+        batch_size=B,
+        collate_fn=collate_fn(model),
+        num_workers=datacfg.num_workers,
+        pin_memory=True,    
+        persistent_workers=True,
     )
-    
+
     # We're not doing val yet
     val_dl = train_dl
 
@@ -91,8 +100,8 @@ def train(rank: int, world_size: int, config: Config):
     )
 
     step = 0
-    hours_seen = 0.
-    
+    hours_seen = 0.0
+
     if train.checkpoint is not None:
         checkpoint_path = train.checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=f"cuda:{rank}")
@@ -121,9 +130,9 @@ def train(rank: int, world_size: int, config: Config):
     gradient_accumulation_steps = train.grad_acc_steps
 
     train_dl_iter = iter(train_dl)
-    
+
     batch = to_device(next(train_dl_iter), device)
-    
+
     def wandb_log(*args, **kwargs):
         if is_main_process:
             wandb.log(*args, **kwargs)
@@ -169,7 +178,9 @@ def train(rank: int, world_size: int, config: Config):
                 param_group["lr"] = lr
 
             for micro_step in range(gradient_accumulation_steps):
-                hours_seen += batch["audio_lengths"].sum()/model.dac.sample_rate/60/60/60
+                hours_seen += (
+                    batch["audio_lengths"].sum() / model.dac.sample_rate / 60 / 60 / 60
+                )
                 model.require_backward_grad_sync = (
                     micro_step == gradient_accumulation_steps - 1
                 )
@@ -182,9 +193,11 @@ def train(rank: int, world_size: int, config: Config):
 
                 batch = to_device(next(train_dl_iter), device)
                 loss.backward()
-            
+
             if is_main_process and step == 0:
-                print(f"Took {time.time() - start_time:.2f}s to finish first step training loop")
+                print(
+                    f"Took {time.time() - start_time:.2f}s to finish first step training loop"
+                )
 
             grad_norm = clip_grad_norm_(model.parameters(), train.max_grad_norm)
 
@@ -239,9 +252,7 @@ def train(rank: int, world_size: int, config: Config):
 
                 val_duration = val_end - val_start
 
-                print(
-                    f"{device=} val took {val_duration:.2f}s for {val_steps} steps"
-                )
+                print(f"{device=} val took {val_duration:.2f}s for {val_steps} steps")
 
                 wandb_log(
                     {"val/loss": val_loss.item(), "val/duration": val_duration},
@@ -290,7 +301,7 @@ def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
     if config is None:
         config = Config()
 
-    config:Config = load_config(config, edit)
+    config: Config = load_config(config, edit)
 
     config.train.torch_profile = config.train.torch_profile or profile
     config.train.wandb_watch = config.train.wandb_watch or watch

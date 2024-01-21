@@ -11,6 +11,7 @@ from nanodrz.utils import to_device, make_padding_mask
 from nanodrz import utils
 
 import dac
+import torch
 
 
 class DiarizeGPT(Module):
@@ -142,7 +143,7 @@ class DiarizeGPT(Module):
             audio = rearrange(audio, "B L T -> B T L")
 
         audio = self.audio_proj(audio)
-        text_embs = self.text_emb(labels)
+        text_embs = self.text_emb(labels) + self.text_pos_emb(torch.arange(text_embs.shape[1]))
 
         # view of the start and end tokens for each triplet in the sequence of coords
         # [start, end, label, start, end, label, ...]
@@ -151,12 +152,11 @@ class DiarizeGPT(Module):
         #   [start, end]
         #   ...
         # ]
-        time_boundaries = labels.view(B, -1, 3)[:, :, :2]
-        # Add concept of time to the time boundary tokens
-        rearrange(text_embs, "B (b s) L -> B b s L", s=3)[:, :, :2].add_(
-            self.time_pos_emb(time_boundaries)
-        )
-        text_embs = text_embs + self.text_pos_emb(torch.arange(text_embs.shape[1]))
+        # time_boundaries = labels.view(B, -1, 3)[:, :, :2]
+        # # Add concept of time to the time boundary tokens
+        # rearrange(text_embs, "B (b s) L -> B b s L", s=3)[:, :, :2].add_(
+        #     self.time_pos_emb(time_boundaries)
+        # )
 
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 
@@ -192,7 +192,7 @@ class DiarizeGPT(Module):
         temperature=0.8,
         # Total number of labels * 3
         # Must be a multiple of 3
-        max_steps=3*10,
+        max_steps=3 * 10,
         top_k: int = 100,
         top_p: float = 0.0,
         repetion_penalty=1,
@@ -207,42 +207,45 @@ class DiarizeGPT(Module):
 
         emb = torch.cat((audio, self.start_diarize_emb[None][None]), dim=1)
 
-        tokens = torch.zeros(0,dtype=torch.long).cuda()
+        tokens = torch.zeros(0, dtype=torch.long).cuda()
 
         for step in range(max_steps):
             latents = self.decoder(emb)[:, [-1], :]
             logits = self.text_head(latents)
 
             # We never want to predict the padding token
-            logits[..., 0] = -1e9
+            logits[..., 0] = torch.finfo(logits.dtype).min
 
             # We know that we're predicting start, end, label
             # So we can make eos and label no predictable
             if step % 3 != 0 or step == 0:
                 # Prevent EOS
-                logits[..., 1] = -1e9
+                logits[..., 1] = torch.finfo(logits.dtype).min
+
+            class_pred_step = (step - 2) % 3 == 0 
 
             # Class prediction steps
-            if (step-2) % 3 == 0:
-                # Prevent time step predictions
-                logits[..., : -self.num_classes] = -1e9
+            if class_pred_step:
+                logits[..., : -self.num_classes] = torch.finfo(logits.dtype).min
                 # Prevent penalty for repeating classes
                 repetion_penalty = 1
             else:
                 # Prevent class prediction
-                logits[..., -self.num_classes :] = -1e9
+                logits[..., -self.num_classes :] = torch.finfo(logits.dtype).min
                 # Enable Penalty for repeating time steps
                 repetion_penalty = 2
 
             # Repetition Penalty should be high because for the simple solution we're never
-            # predicting the same time step 
+            # predicting the same time step
             # class prediciton steps should have no penalty!)
-            if repetion_penalty != 1:
-                _tokens = rearrange(tokens, "T -> 1 1 T")
-                score = torch.gather(logits, -1, _tokens)
-                # if score < 0 then repetition penalty has to be multiplied to reduce the previous token probability
-                score = torch.where(score <= 0.0, score * repetion_penalty, score / repetion_penalty)
-                logits = logits.scatter(-1, _tokens, score)
+            # if repetion_penalty != 1:
+            #     _tokens = rearrange(tokens, "T -> 1 1 T")
+            #     score = torch.gather(logits, -1, _tokens)
+            #     # if score < 0 then repetition penalty has to be multiplied to reduce the previous token probability
+            #     score = torch.where(
+            #         score <= 0.0, score * repetion_penalty, score / repetion_penalty
+            #     )
+            #     logits = logits.scatter(-1, _tokens, score)
 
             probs = F.softmax(logits / temperature, dim=-1)
             eos_probs = probs[..., self.eos_idx]
@@ -259,10 +262,27 @@ class DiarizeGPT(Module):
 
             next_token = next_token.flatten().long()
             tokens = torch.cat([tokens, next_token])
-            next_emb = self.text_emb(next_token)[None]
+            
+            next_emb = self.text_emb(next_token)[None] + self.text_pos_emb(step)
+            
+            # Add time embedding
+            if not class_pred_step:
+                next_emb = next_emb + self.time_pos_emb(next_token)
             emb = torch.cat((emb, next_emb), dim=1)
 
-        return torch.tensor(tokens)
+        assert tokens.shape[-1] % 3 == 0
+
+        # Convert these tokens into labels
+        nlabels = []
+
+        for start, end, label in tokens.split(3):
+            # Unquantize the start and end times
+            start = start * self.config.data.max_secs / self.num_time_tokens
+            end = end * self.config.data.max_secs / self.num_time_tokens
+            label = chr(ord("A") + (self.num_embs - (label + 1)).item())
+            nlabels.append([start.item(), end.item(), label])
+
+        return nlabels
 
     @staticmethod
     def from_pretrained(ckpt: str | dict):
