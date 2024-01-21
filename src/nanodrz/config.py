@@ -17,7 +17,6 @@ class ModelConfig(BaseModel):
     nheads: int = 16
     dropout: float = 0.2
     bias: bool = False
-    max_seqlen: int = 8192
     dac_model: str = "16khz"
     sample_rate: int = 16000
     # Turn this on  this if you have an ampere GPU

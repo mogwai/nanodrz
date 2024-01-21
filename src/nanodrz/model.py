@@ -78,6 +78,7 @@ class DiarizeGPT(Module):
             self.audio_pos_emb,
             self.text_pos_emb,
             self.audio_proj,
+            self.start_diarize_emb,
         ]
 
         for w in self.init_mod_weights:

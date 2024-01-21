@@ -4,13 +4,39 @@ Trying as much as possible to keep it simple in this repo
 
 Partially inspired by [Pix2Seq](https://ai.googleblog.com/2022/04/pix2seq-new-language-interface-for.html)
 
+# Overview
 
-# Core Questions
+### Architecture
 
-- Can we get transformers doing diarisation
-- Can we create synthetic combinations of tts datasets to experiment with diarisation difficulty.
-    - Will this help generalise to different domains.
-- What happens as we increase the difficult of the data with interrupts, noise, number of speakers, loudness of speakers.
+At the highest level, the idea here is that if we as humans were to listen to random people talking, we may not know who they are but would be able to distinguish between the different speakers. This approach is trying to copy that ability. At the moment popular diarization pipelines are a collation of lots of different models. This approach attempts to try and to combine a lot of these into one. 
+
+The basic idea is that we're taking a very compressed version of the the audio and predicting of 3 tokens for each section of speech. The first two tokens are the start and end quantized time tokens, the third being the speaker that spoke (A, B, C, ...).
+
+Let's say we have 512 possible tokens, the first 2 are for end of sequence and padding. The last set of tokens are reserved the number of speakers that we can predict. To keep this simple, we're generated synthetic samples with 2 speakers < 30 seconds. This means that the tokens in between index 2 and 509 are for time embeddings. We quantize the continuous timestamps 0.2, 2.5 etc into fixed integers. (Look at the Coordinate Quantization notebook)
+
+So our sequence for our decoder only transformer is:
+
+```
+audio token, audio token, ... , start_diairise_cmd_token, start, end, label, start, end, label, ..., eos
+```
+
+### What about mapping A and B to real speakers.
+
+Great question, we'll still need a second phase to do this so that we know who A and B are. But these speaker ID models are quite good now so giving it a few diarized sections to indentify who A is will hopefully work
+
+### How to deal with longer audio
+
+We'll be limited to doing chunks of audio, however we can prompt the model with some audio from the previous chunk:
+
+Say we complete inferece on our first chunk and identified two speakers, A and B. In the second chunk, we'll take 5 seconds of the audio for each speaker and prompt the model with is so that it knows who they are. This prevents the model swapping the labels for speakers between chunks.
+
+2 chunk inference example
+
+```
+5 seconds of A, 200ms of silence, 5 seconds of B, {audio we want to diarize}, start_diairise_cmd_token, 0, 5, A 6, 11, B, ..., eos
+```
+
+Yes we loose some capacity but this prevents us having to ID each chunks speaker labels at the end. 
 
 # Instructions
 
@@ -29,7 +55,7 @@ train configs/simple_no_ints.yaml
 ### Inference
 
 ```
-TODO
+notebooks/inference.ipynb
 ```
 
 # Experiments
@@ -40,6 +66,12 @@ https://wandb.ai/harrycblum/nano-diarization?workspace=user-harrycblum
 
 https://fluxions.notion.site/nanodrz-Experiment-Log-acea3d5f436949b68e1f5a520c8cfdbc
 
+# Core Questions
+
+- Can we get transformers doing diarisation
+- Can we create synthetic combinations of tts datasets to experiment with diarisation difficulty.
+    - Will this help generalise to different domains.
+- What happens as we increase the difficult of the data with interrupts, noise, number of speakers, loudness of speakers.
 
 # Credits
 
