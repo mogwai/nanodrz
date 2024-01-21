@@ -47,6 +47,9 @@ class DiarizeGPT(Module):
         # Load DAC
         model_path = dac.utils.download(model_type=modelcfg.dac_model)
         self.dac: dac.DAC = dac.DAC.load(model_path).eval()
+        
+        # We're not in need of this as we're not converting back to audio.
+        del self.dac.decoder
 
         self.start_diarize_emb = nn.Parameter(torch.zeros(dmodel))
 

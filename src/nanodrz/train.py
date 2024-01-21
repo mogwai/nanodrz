@@ -31,13 +31,7 @@ def train(rank: int, world_size: int, config: Config):
     start_time = time.time()
 
     train = config.train
-
-    if train.checkpoint is not None:
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        model_config = ModelConfig(**checkpoint["config"]["model"])
-    else:
-        model_config: ModelConfig = config.model
-
+    
     datacfg = config.data
 
     assert config.run_dir is not None
@@ -97,15 +91,19 @@ def train(rank: int, world_size: int, config: Config):
     )
 
     step = 0
-
+    hours_seen = 0.
+    
     if train.checkpoint is not None:
         checkpoint_path = train.checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=f"cuda:{rank}")
         _ = model.load_state_dict(checkpoint["model"], strict=False)
+        print("Load State Dict:")
+        print(_)
 
         if train.continue_from_checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer"])
             step = checkpoint["step"]
+            hours_seen = checkpoint["step"]
 
         del checkpoint
         torch.cuda.empty_cache()
@@ -156,7 +154,6 @@ def train(rank: int, world_size: int, config: Config):
     )
 
     loss = 0.0
-    hours_seen = 0.0
 
     if is_main_process:
         print(f"Took {time.time() - start_time:.2f}s to hit training")
@@ -257,6 +254,7 @@ def train(rank: int, world_size: int, config: Config):
                 checkpoint = {
                     "config": config.model_dump(),
                     "step": step,
+                    "hours_seen": hours_seen,
                     "model": {
                         k: v
                         for k, v in model.state_dict().items()

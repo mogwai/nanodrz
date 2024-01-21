@@ -1,3 +1,6 @@
+train:
+  checkpoint: /home/harry/runs/nanodrz/nanodrz/1705682281/0004600.pt
+
 data:
   interrupt_sec_mean: 0
   interrupt_var: 0
