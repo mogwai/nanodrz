@@ -4,7 +4,7 @@
 
 # Overview
 
-Diarization models in the wild currently combine a variety of models and are quite complex. [Whisper](https://arxiv.org/pdf/2212.04356.pdf) showed it was possible to diarize with transformers in a more simple way however wasn't as good as mainstream approaches for diarization, especially on overlapping speech. This approach attempts to use synthetic data to experiment with overlapping speech difficulty and notably uses new audio compression techniques to 
+Diarization models in the wild currently combine a variety of models and are quite complex. This approach attempts to use synthetic data to experiment with overlapping speech difficulty and notably uses new audio compression techniques to compress audio into a format that can be decoded by a transformer. 
 
 ### Architecture
 
