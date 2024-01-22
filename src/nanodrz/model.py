@@ -53,6 +53,7 @@ class DiarizeGPT(Module):
         del self.dac.decoder
 
         self.start_diarize_emb = nn.Parameter(torch.zeros(dmodel))
+        torch.nn.init.normal_(self.start_diarize_emb, mean=0.0, std=0.02)
 
         self.audio_proj = nn.Linear(self.dac.latent_dim, dmodel)
 
@@ -78,7 +79,6 @@ class DiarizeGPT(Module):
             self.audio_pos_emb,
             self.text_pos_emb,
             self.audio_proj,
-            self.start_diarize_emb,
         ]
 
         for w in self.init_mod_weights:
@@ -269,6 +269,7 @@ class DiarizeGPT(Module):
             # Add time embedding
             if not class_pred_step:
                 next_emb = next_emb + self.time_pos_emb(next_token)
+                
             emb = torch.cat((emb, next_emb), dim=1)
 
         assert tokens.shape[-1] % 3 == 0

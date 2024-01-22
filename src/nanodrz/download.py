@@ -5,9 +5,27 @@ from nanodrz.constants import CACHE_DIR
 
 from os import path, makedirs
 from tqdm import tqdm
+import os
+import subprocess
 
 
-def dl_file(link:str):
+def dl_scp_file(link:str):
+    """
+    Downloads a file using ssh scp via subprocess
+
+    hostname:runs/nanodrz/nanodrz/1705840799/0013500.pt
+    """
+    if ":" not in link:
+        raise "Invalid scp path"
+    
+    file_path = path.join(CACHE_DIR, link.split(":"))
+    
+    if not path.exists(file_path):
+        subprocess.run(["scp", link, file_path])
+    
+    return file_path
+
+def dl_http_file(link:str):
     file_path = path.join(CACHE_DIR, path.basename(link))
 
     if not path.exists(file_path):
@@ -37,7 +55,7 @@ def dl_libritts_test():
 
     link = "https://openslr.elda.org/resources/60/test-clean.tar.gz"
 
-    file_path = dl_file(link)
+    file_path = dl_http_file(link)
     extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
     
     if not path.exists(extract_folder):
@@ -55,7 +73,7 @@ def dl_libritts_dev():
     
     link = "https://openslr.elda.org/resources/60/dev-clean.tar.gz"
 
-    file_path = dl_file(link)
+    file_path = dl_http_file(link)
     extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
     
     if not path.exists(extract_folder):
