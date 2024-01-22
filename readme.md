@@ -80,6 +80,10 @@ https://fluxions.notion.site/nanodrz-Experiment-Log-acea3d5f436949b68e1f5a520c8c
     - Will this help generalise to different domains.
 - What happens as we increase the difficult of the data with interrupts, noise, number of speakers, loudness of speakers.
 
+# License
+
+I've chosen a strong copy left license for now because I want to get people giving back to this project.
+
 # Credits
 
 [James Parsloe](https://github.com/jamesparsloe) for project structure and lots of the utils found here.
