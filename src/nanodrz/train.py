@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 import wandb
 from nanodrz import data, utils
-from nanodrz.config import Config, ModelConfig, load_config
+from nanodrz.config import Config, load_config
 from nanodrz.data import GeneratorIterableDataset, collate_fn
 from nanodrz.model import DiarizeGPT as Model
 from nanodrz import optim
@@ -87,7 +87,7 @@ def train(rank: int, world_size: int, config: Config):
         batch_size=B,
         collate_fn=collate_fn(model),
         num_workers=datacfg.num_workers,
-        pin_memory=True,    
+        pin_memory=True,
         persistent_workers=True,
     )
 

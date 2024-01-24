@@ -84,6 +84,18 @@ def seed_all(seed: int):
     np.random.seed(seed)
     random.seed(seed)
 
+def get_random_states():
+    # Get the state of torch, numpy and random libraries random state
+    torch_state = torch.get_rng_state()
+    np_state = np.random.get_state()
+    random_state = random.getstate()
+    return torch_state, np_state, random_state
+
+def set_random_states(torch_state, np_state, random_state):
+    """Set the state of the libraries"""
+    torch.set_rng_state(torch_state)
+    np.random.set_state(np_state)
+    random.setstate(random_state)
 
 def make_padding_mask(lengths: Tensor) -> Tensor:
     T_max = lengths.max()
@@ -234,6 +246,7 @@ def visualise_annotation(labels: list):
     for l in labels:
         annotation[Segment(l[0], l[0] + l[1])] = l[2]
     display(annotation)
+    return annotation
 
 
 RESAMPLERS = {}

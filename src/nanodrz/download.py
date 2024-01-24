@@ -7,25 +7,53 @@ from os import path, makedirs
 from tqdm import tqdm
 import os
 import subprocess
+import os
+import subprocess
+import subprocess
 
 
-def dl_scp_file(link:str):
+def dl_scp_file(link: str):
     """
-    Downloads a file using ssh scp via subprocess
+    Downloads a file using rsync and scp subprocess
 
     hostname:runs/nanodrz/nanodrz/1705840799/0013500.pt
+
+    Use rsync --partial --progress --human-readable -e ssh to download the file.
     """
     if ":" not in link:
         raise "Invalid scp path"
-    
-    file_path = path.join(CACHE_DIR, link.split(":"))
-    
-    if not path.exists(file_path):
-        subprocess.run(["scp", link, file_path])
-    
+
+    file_path = path.join(CACHE_DIR, link.split(":")[-1])
+
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    # Use rsync --partial --progress --human-readable -e ssh
+    cmd = [
+        "rsync",
+        "--partial",
+        "--progress",
+        "--human-readable",
+        "-e",
+        "ssh",
+        link,
+        file_path,
+    ]
+    print(" ".join(cmd))
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+
+    for line in process.stdout:
+        print(line, end="")
+
+    process.wait()
+
     return file_path
 
-def dl_http_file(link:str):
+
+def dl_http_file(link: str):
     file_path = path.join(CACHE_DIR, path.basename(link))
 
     if not path.exists(file_path):
@@ -39,12 +67,12 @@ def dl_http_file(link:str):
             unit_scale=True,
             leave=False,
         )
-        
+
         with open(file_path, "wb") as file:
             for data in response.iter_content(block_size):
                 progress_bar.update(len(data))
                 file.write(data)
-    
+
     return file_path
 
 
@@ -57,7 +85,7 @@ def dl_libritts_test():
 
     file_path = dl_http_file(link)
     extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
-    
+
     if not path.exists(extract_folder):
         makedirs(extract_folder, exist_ok=True)
         tar = tarfile.open(file_path, mode="r:gz")
@@ -66,16 +94,17 @@ def dl_libritts_test():
 
     return path.join(extract_folder, "LibriTTS")
 
+
 def dl_libritts_dev():
     """
     LibriTTS https://openslr.elda.org/60/
     """
-    
+
     link = "https://openslr.elda.org/resources/60/dev-clean.tar.gz"
 
     file_path = dl_http_file(link)
     extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
-    
+
     if not path.exists(extract_folder):
         makedirs(extract_folder, exist_ok=True)
         tar = tarfile.open(file_path, mode="r:gz")
