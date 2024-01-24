@@ -14,7 +14,7 @@ dependencies = [
     "torch",
     "torchaudio",
     "tqdm",
-    "pyannote.core",
+    "pyannote.metrics",
     "pydantic",
     "wandb"
 ]
