@@ -80,22 +80,16 @@ def collate_fn(model: DiarizeGPT) -> callable:
 def artificial_drz_generator(
     speakers: list[Speaker],
     model: torch.nn.Module,
-    max_secs=30,
-    min_secs=10,
     sr=16000,
-    interrupt_sec_mean=0.2,
-    interrupt_var=0.1,
-    num_speakers=4,
+    max_secs=30,
+    **kwargs,
 ):
     while True:
         audio2, label = artificial_diarisation_sample(
             speakers,
-            max_secs=max_secs,
-            min_seconds=min_secs,
             sr=sr,
-            interrupt_sec_mean=interrupt_sec_mean,
-            interrupt_var=interrupt_var,
-            num_speakers=num_speakers,
+            max_secs=max_secs,
+            **kwargs,
         )
         
         audio = model.dac.preprocess(audio2, sr)

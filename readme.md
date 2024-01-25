@@ -47,11 +47,7 @@ Yes we loose some capacity but this prevents us having to ID each chunks speaker
 
 # Instructions
 
-### Install
-
-```sh
-pip install -e .
-```
+pip install git+https://github.com/mogwai/nanodrz.git
 
 ### Train
 

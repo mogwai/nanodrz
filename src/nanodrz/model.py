@@ -6,7 +6,7 @@ from einops import rearrange
 from torch.nn.utils.rnn import pad_sequence
 
 from nanodrz.config import ModelConfig, Config
-from nanodrz.modules import ScaledSinusoidalEmbedding, Decoder
+from nanodrz.modules import ScaledSinusoidalEmbedding, Decoder, WhisperConvs
 from nanodrz.utils import to_device, make_padding_mask
 from nanodrz import utils
 
@@ -22,7 +22,7 @@ class DiarizeGPT(Module):
 
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config = Config()):
         super().__init__()
 
         self.config = config
@@ -61,8 +61,13 @@ class DiarizeGPT(Module):
         self.audio_pos_emb = ScaledSinusoidalEmbedding(dmodel)
         self.text_pos_emb = ScaledSinusoidalEmbedding(dmodel)
 
+        self.whispconv = WhisperConvs(
+            dmodel, self.dac.codebook_dim * self.dac.n_codebooks
+        )
+
         # This is to embed the position of the time in the token representing the audio
-        self.time_pos_emb = ScaledSinusoidalEmbedding(dmodel)
+        if modelcfg.use_time_pos:
+            self.time_pos_emb = ScaledSinusoidalEmbedding(dmodel)
 
         self.decoder = Decoder(
             d_model=dmodel,
@@ -135,16 +140,32 @@ class DiarizeGPT(Module):
         label_lengths: Tensor,
     ):
         B = audio.shape[0]
+        modelcfg = self.config.model
 
-        # DAC Z Latent Reduction factor
-        audio_lengths = audio_lengths // 320
+        if modelcfg.audio_encode == "dac":
+            # DAC Z Latent Reduction factor
+            audio_lengths = audio_lengths // 320
+            with torch.no_grad():
+                audio = self.dac.encode(audio)[0]
+                audio = rearrange(audio, "B L T -> B T L")
 
-        with torch.no_grad():
-            audio = self.dac.encode(audio)[0]
-            audio = rearrange(audio, "B L T -> B T L")
+        elif modelcfg.audio_encode == "dac-codes":
+            codes = self.dac.encode(audio)[1]
 
-        audio = self.audio_proj(audio)
-        text_embs = self.text_emb(labels) + self.text_pos_emb(torch.arange(text_embs.shape[1]))
+            audio = [
+                self.dac.quantizer.quantizers[i].codebook(codes[:, i])
+                for i in range(len(self.dac.quantizer.quantizers))
+            ]
+            audio = torch.cat(audio, dim=-1)
+            # Dac Reduction of length
+            audio_lengths = audio_lengths // 320
+            audio = self.whispconv(audio)
+            # Whisper reduction
+            audio_lengths = audio_lengths // 2
+
+        text_embs = self.text_emb(labels) + self.text_pos_emb(
+            torch.arange(labels.shape[1])
+        )
 
         # view of the start and end tokens for each triplet in the sequence of coords
         # [start, end, label, start, end, label, ...]
@@ -153,11 +174,12 @@ class DiarizeGPT(Module):
         #   [start, end]
         #   ...
         # ]
-        # time_boundaries = labels.view(B, -1, 3)[:, :, :2]
-        # # Add concept of time to the time boundary tokens
-        # rearrange(text_embs, "B (b s) L -> B b s L", s=3)[:, :, :2].add_(
-        #     self.time_pos_emb(time_boundaries)
-        # )
+        if modelcfg.use_time_pos:
+            time_boundaries = labels.view(B, -1, 3)[:, :, :2]
+            # Add concept of time to the time boundary tokens
+            rearrange(text_embs, "B (b s) L -> B b s L", s=3)[:, :, :2].add_(
+                self.time_pos_emb(time_boundaries)
+            )
 
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 
@@ -198,6 +220,8 @@ class DiarizeGPT(Module):
         top_p: float = 0.0,
         repetion_penalty=1,
     ):
+        cfg = self.config.model
+        
         with torch.no_grad():
             audio = self.dac.encode(audio[None])[0]
             audio = rearrange(audio, "B L T -> B T L")
@@ -223,31 +247,16 @@ class DiarizeGPT(Module):
                 # Prevent EOS
                 logits[..., 1] = torch.finfo(logits.dtype).min
 
-            class_pred_step = (step - 2) % 3 == 0 
+            class_pred_step = (step - 2) % 3 == 0
 
             # Class prediction steps
             if class_pred_step:
                 logits[..., : -self.num_classes] = torch.finfo(logits.dtype).min
-                # Prevent penalty for repeating classes
-                repetion_penalty = 1
             else:
                 # Prevent class prediction
                 logits[..., -self.num_classes :] = torch.finfo(logits.dtype).min
-                # Enable Penalty for repeating time steps
-                repetion_penalty = 2
-
-            # Repetition Penalty should be high because for the simple solution we're never
-            # predicting the same time step
-            # class prediciton steps should have no penalty!)
-            # if repetion_penalty != 1:
-            #     _tokens = rearrange(tokens, "T -> 1 1 T")
-            #     score = torch.gather(logits, -1, _tokens)
-            #     # if score < 0 then repetition penalty has to be multiplied to reduce the previous token probability
-            #     score = torch.where(
-            #         score <= 0.0, score * repetion_penalty, score / repetion_penalty
-            #     )
-            #     logits = logits.scatter(-1, _tokens, score)
-
+         
+        
             probs = F.softmax(logits / temperature, dim=-1)
             eos_probs = probs[..., self.eos_idx]
             if torch.any(eos_probs > 0.1):
@@ -263,13 +272,13 @@ class DiarizeGPT(Module):
 
             next_token = next_token.flatten().long()
             tokens = torch.cat([tokens, next_token])
-            
+
             next_emb = self.text_emb(next_token)[None] + self.text_pos_emb(step)
-            
+
             # Add time embedding
-            if not class_pred_step:
+            if not class_pred_step and cfg.use_time_pos:
                 next_emb = next_emb + self.time_pos_emb(next_token)
-                
+
             emb = torch.cat((emb, next_emb), dim=1)
 
         assert tokens.shape[-1] % 3 == 0

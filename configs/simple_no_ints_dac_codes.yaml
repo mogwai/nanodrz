@@ -1,10 +1,12 @@
 train:
   checkpoint: /home/harry/.cache/nanodrz/runs/nanodrz/nanodrz/1705840799/0037000.pt 
+  continue_from_checkpoint: false
   max_lr: 3e-4
 
-
+model:
+  audio_encode: dac-codes
 
 data:
+
   interrupt_sec_mean: 0
-  interrupt_var: 0
   num_speakers: 2
