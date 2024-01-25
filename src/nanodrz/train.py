@@ -74,12 +74,8 @@ def train(rank: int, world_size: int, config: Config):
         data.artificial_drz_generator(
             speakers,
             model,
-            datacfg.max_secs,
-            datacfg.min_audio_duration,
             model.dac.sample_rate,
-            interrupt_sec_mean=datacfg.interrupt_sec_mean,
-            interrupt_var=datacfg.interrupt_var,
-            num_speakers=datacfg.num_speakers,
+            **datacfg.model_dump(),
         )
     )
     train_dl = DataLoader(
@@ -88,7 +84,7 @@ def train(rank: int, world_size: int, config: Config):
         collate_fn=collate_fn(model),
         num_workers=datacfg.num_workers,
         pin_memory=True,
-        persistent_workers=True,
+        persistent_workers=datacfg.num_workers > 0,
     )
 
     # We're not doing val yet
@@ -191,8 +187,8 @@ def train(rank: int, world_size: int, config: Config):
                     loss = model(**batch)
                     loss = loss / gradient_accumulation_steps
 
-                batch = to_device(next(train_dl_iter), device)
                 loss.backward()
+                batch = to_device(next(train_dl_iter), device)
 
             if is_main_process and step == 0:
                 print(

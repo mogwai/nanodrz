@@ -33,7 +33,8 @@
             "request": "launch",
             "module": "nanodrz.train",
             "args": [
-                "--dev"
+                "--dev",
+                "configs/simple_no_ints_dac_codes.yaml"
             ],
             "justMyCode": true
         }

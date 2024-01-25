@@ -1,5 +1,6 @@
 import torch
 from torch import nn, Tensor
+import torchaudio
 import torch.nn.functional as F
 from einops import rearrange
 import torch
@@ -60,9 +61,7 @@ class Attention(nn.Module):
         B, T, C = x.size()
 
         einop = "B T (split heads hs) -> split B heads T hs"
-        q, k, v = rearrange(
-            self.qkv(x), einop, heads=self.n_head, split=3
-        )
+        q, k, v = rearrange(self.qkv(x), einop, heads=self.n_head, split=3)
         y = torch.nn.functional.scaled_dot_product_attention(
             q,
             k,
@@ -156,3 +155,16 @@ class ScaledSinusoidalEmbedding(nn.Module):
     def forward(self, pos_ids: Tensor):
         emb = self.emb[pos_ids]
         return self.weight * emb
+
+
+class WhisperConvs(nn.Module):
+    def __init__(self, dmodel: int, channels:int ):
+        super().__init__()
+        self.conv1 = nn.Conv1d(channels, dmodel, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv1d(dmodel, dmodel, kernel_size=3, stride=2, padding=1)
+
+    def forward(self, x: Tensor):
+        x = x.permute(0, 2, 1)
+        x = F.gelu(self.conv1(x))
+        x = F.gelu(self.conv2(x))
+        return x.permute(0, 2, 1)
