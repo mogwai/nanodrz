@@ -27,6 +27,8 @@ def train(rank: int, world_size: int, config: Config):
             world_size=world_size,
             rank=rank,
         )
+    
+    torch.cuda.set_device(rank)
 
     start_time = time.time()
 

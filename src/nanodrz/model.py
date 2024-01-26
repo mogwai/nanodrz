@@ -148,6 +148,8 @@ class DiarizeGPT(Module):
             with torch.no_grad():
                 audio = self.dac.encode(audio)[0]
                 audio = rearrange(audio, "B L T -> B T L")
+            
+            audio = self.audio_proj(audio)
 
         elif modelcfg.audio_encode == "dac-codes":
             codes = self.dac.encode(audio)[1]
@@ -218,15 +220,25 @@ class DiarizeGPT(Module):
         max_steps=3 * 10,
         top_k: int = 100,
         top_p: float = 0.0,
-        repetion_penalty=1,
     ):
         cfg = self.config.model
         
-        with torch.no_grad():
-            audio = self.dac.encode(audio[None])[0]
-            audio = rearrange(audio, "B L T -> B T L")
+        if cfg.audio_encode == "dac":
+            with torch.no_grad():
+                audio = self.dac.encode(audio)[0]
+                audio = rearrange(audio, "B L T -> B T L")
+            
+            audio = self.audio_proj(audio)
 
-        audio = self.audio_proj(audio)
+        elif cfg.audio_encode == "dac-codes":
+            codes = self.dac.encode(audio)[1]
+
+            audio = [
+                self.dac.quantizer.quantizers[i].codebook(codes[:, i])
+                for i in range(len(self.dac.quantizer.quantizers))
+            ]
+            audio = torch.cat(audio, dim=-1)
+            audio = self.whispconv(audio)
 
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 
