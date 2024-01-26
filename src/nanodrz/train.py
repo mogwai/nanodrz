@@ -20,7 +20,7 @@ from nanodrz import optim
 from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
 
 
-def train(rank: int, world_size: int, config: Config):
+def train(rank: int, world_size: int, config: Config, dev: bool = False):
     if world_size > 1:
         init_process_group(
             backend="nccl",
@@ -328,12 +328,12 @@ def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
     if world_size > 1:
         mp.spawn(
             train,
-            args=(world_size, config),
+            args=(world_size, config, dev),
             nprocs=world_size,
             join=True,
         )
     else:
-        train(0, world_size, config)
+        train(0, world_size, config, dev)
 
 
 if __name__ == "__main__":
