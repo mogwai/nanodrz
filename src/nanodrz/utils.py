@@ -244,7 +244,7 @@ def visualise_annotation(labels: list):
 
     annotation = Annotation()
     for l in labels:
-        annotation[Segment(l[0], l[0] + l[1])] = l[2]
+        annotation[Segment(l[0], l[1])] = l[2]
     display(annotation)
     return annotation
 
@@ -372,3 +372,33 @@ def find_nonsilence_chunks(
         chunks.append(cur_chunk)
 
     return chunks, silence_indexes
+
+
+def load_what_you_can(checkpoint, model):
+    """
+    This method takes a checkpoint and loads as many weights from it as possible:
+
+    If they are the same shape, it just loads normally
+
+    If the checkpoints shape is larger [1, 512] vs [1, 256]
+    the checkpoints weights are clipped to 256
+
+    If the checkpoints shape is smaller [1, 512] vs [1, 1024], then what is available is loaded.
+
+    """
+    model_state_dict = model.state_dict()
+    checkpoint_state_dict = checkpoint
+
+    for name, param in checkpoint_state_dict.items():
+        if name in model_state_dict:
+            if param.shape == model_state_dict[name].shape:
+                model_state_dict[name].copy_(param)
+            elif param.shape[0] > model_state_dict[name].shape[0]:
+                print()
+                model_state_dict[name].copy_(param[:model_state_dict[name].shape[0]])
+            else:
+                model_state_dict[name].copy_(param)
+        else:
+            print(f"Ignoring parameter '{name}' because it is not found in the model")
+
+    return model.load_state_dict(model_state_dict)

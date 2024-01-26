@@ -15,21 +15,21 @@ class ModelConfig(BaseModel):
     layers: int = 8
     dmodel: int = 1024
     nheads: int = 16
-    dropout: float = 0.2
+    dropout: float = 0
     bias: bool = False
     audio_encode: str = "dac"
     dac_model: str = "16khz"
     sample_rate: int = 16000
     # Turn this on this if you have an ampere GPU
     use_flash_attn: bool = False
-    use_time_pos: bool = False
-
+    use_time_pos: bool = True
+    num_embs: int = 512
 
 class DataConfig(BaseModel):
     num_workers: int = 8
     max_secs: float = 30.0
-    min_audio_duration:float = 10.0
-    interrupt_sec_mean: float = 0.1
+    min_secs: float = 10.0
+    interrupt_max: float = 0.1
     silence_max: float = 1
     num_speakers: int = 8
 

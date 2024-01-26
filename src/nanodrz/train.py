@@ -103,9 +103,10 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     if train.checkpoint is not None:
         checkpoint_path = train.checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=f"cuda:{rank}")
-        _ = model.load_state_dict(checkpoint["model"], strict=False)
+        load_output = utils.load_what_you_can(checkpoint["model"], model)
+    
         print("Load State Dict:")
-        print(_)
+        print(load_output)
 
         if train.continue_from_checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer"])
