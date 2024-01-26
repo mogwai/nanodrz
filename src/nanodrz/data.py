@@ -54,7 +54,7 @@ def collate_fn(model: DiarizeGPT) -> callable:
 
         for b in labels:    
             for l in b:
-                l[1] = round((l[0] + l[1]) / Q) + 2
+                l[1] = round(l[1] / Q) + 2
                 l[0] = round(l[0] / Q) + 2  # EOS PAD
                 l[2] = model.num_embs - 1 - (ord(l[2]) - ord("A"))
             
@@ -105,7 +105,7 @@ def artificial_diarisation_sample(
     speakers: list[Speaker],
     max_secs=30,
     min_secs=7.5,
-    interrupt_sec_mean=0.2,
+    interrupt_max=0.2,
     silence_max=0.2,
     num_speakers=4,
     sr=16000,
@@ -140,7 +140,7 @@ def artificial_diarisation_sample(
         random_sample = random_sample.sum(dim=0)[None]
 
         int_range = min(
-            interrupt_sec_mean, audio.shape[-1] / sr, random_sample.shape[-1] / sr
+            interrupt_max, audio.shape[-1] / sr, random_sample.shape[-1] / sr
         )
         
         cut_point = int(random.uniform(-int_range, silence_max) * sr)
@@ -161,7 +161,7 @@ def artificial_diarisation_sample(
         if start_label > 60:
             breakpoint()
         
-        labels.append([start_label, random_sample.shape[-1] / sr, name_label])
+        labels.append([start_label, start_label + random_sample.shape[-1] / sr, name_label])
 
     return audio, labels
 

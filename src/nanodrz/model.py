@@ -30,11 +30,11 @@ class DiarizeGPT(Module):
         dmodel = modelcfg.dmodel
 
         # Let's predict at least 8 speakers
-        self.num_classes = 8
+        self.num_classes = config.data.num_speakers
 
         # From the Coordinate Qunatization notebook , we saw that we need 288 ~50ms errors on average
         # Round to the nearest power of 2
-        self.num_embs = 512
+        self.num_embs = modelcfg.num_embs
 
         # 2 for eos and pad 1 for
         self.num_time_tokens = self.num_embs - (2 + self.num_classes)
@@ -54,16 +54,18 @@ class DiarizeGPT(Module):
 
         self.start_diarize_emb = nn.Parameter(torch.zeros(dmodel))
         torch.nn.init.normal_(self.start_diarize_emb, mean=0.0, std=0.02)
-
-        self.audio_proj = nn.Linear(self.dac.latent_dim, dmodel)
+        
+        self.init_mod_weights = []
+        if modelcfg.audio_encode == "dac":
+            self.audio_proj = nn.Linear(self.dac.latent_dim, dmodel)
+            self.init_mod_weights += [self.audio_proj]
+        elif modelcfg.audio_encode == "dac-codes":
+            self.whisperconv = WhisperConvs(dmodel, self.dac.codebook_dim*self.dac.n_codebooks)
+            self.init_mod_weights += [self.whisperconv]
 
         # Positional Encoding
         self.audio_pos_emb = ScaledSinusoidalEmbedding(dmodel)
-        self.text_pos_emb = ScaledSinusoidalEmbedding(dmodel)
-
-        self.whispconv = WhisperConvs(
-            dmodel, self.dac.codebook_dim * self.dac.n_codebooks
-        )
+        self.text_pos_emb = ScaledSinusoidalEmbedding(dmodel)        
 
         # This is to embed the position of the time in the token representing the audio
         if modelcfg.use_time_pos:
@@ -78,12 +80,11 @@ class DiarizeGPT(Module):
         )
 
         # We want to init only these modules and leave the rest
-        self.init_mod_weights = [
+        self.init_mod_weights += [
             self.decoder,
             self.text_head,
             self.audio_pos_emb,
             self.text_pos_emb,
-            self.audio_proj,
         ]
 
         for w in self.init_mod_weights:
@@ -205,11 +206,11 @@ class DiarizeGPT(Module):
             x[b, audio_lengths[b] : audio_lengths[b] + label_lengths[b]]
             for b in range(B)
         ]
+
         text_latents = pad_sequence(text_latents, batch_first=True)
         text_logits = self.text_head(text_latents).permute(0, 2, 1)
         loss = F.cross_entropy(text_logits, labels, ignore_index=self.pad_idx)
 
-        # For each position, 
         return loss
 
     @torch.inference_mode()
@@ -240,7 +241,7 @@ class DiarizeGPT(Module):
                 for i in range(len(self.dac.quantizer.quantizers))
             ]
             audio = torch.cat(audio, dim=-1)
-            audio = self.whispconv(audio)
+            audio = self.whisperconv(audio)
 
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 
@@ -302,9 +303,11 @@ class DiarizeGPT(Module):
 
         for start, end, label in tokens.split(3):
             # Unquantize the start and end times
+            print(start, end, label)
             start = start * self.config.data.max_secs / self.num_time_tokens
             end = end * self.config.data.max_secs / self.num_time_tokens
             label = chr(ord("A") + (self.num_embs - (label + 1)).item())
+            print(start, end, label)
             nlabels.append([start.item(), end.item(), label])
 
         return nlabels
