@@ -381,8 +381,7 @@ def load_what_you_can(checkpoint, model):
 
     If they are the same shape, it just loads normally
 
-    If the checkpoints shape is larger [1, 512] vs [1, 256]
-    the checkpoints weights are clipped to 256
+    If the checkpoints shape is larger [1, 512] vs [1, 256] 
 
     If the checkpoints shape is smaller [1, 512] vs [1, 1024], then what is available is loaded.
 
@@ -391,15 +390,20 @@ def load_what_you_can(checkpoint, model):
     checkpoint_state_dict = checkpoint
 
     for name, param in checkpoint_state_dict.items():
-        if name in model_state_dict:
-            if param.shape == model_state_dict[name].shape:
-                model_state_dict[name].copy_(param)
-            elif param.shape[0] > model_state_dict[name].shape[0]:
-                print()
-                model_state_dict[name].copy_(param[:model_state_dict[name].shape[0]])
-            else:
-                model_state_dict[name].copy_(param)
-        else:
+        if name not in model_state_dict:
             print(f"Ignoring parameter '{name}' because it is not found in the model")
+            continue
+            
+        model_state = model_state_dict[name]
+        mshape = model_state.shape
+        pshape = param.shape
+
+        if pshape == mshape:
+            model_state.copy_(param)
+            continue
+        
+        min_shape = [min(param.shape[i], model_state.shape[i]) for i in range(len(param.shape))]
+        idxs = torch.meshgrid(*[torch.arange(s) for s in min_shape])
+        model_state[tuple(idxs)].copy_(param[tuple(idxs)])    
 
     return model.load_state_dict(model_state_dict)

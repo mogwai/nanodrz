@@ -56,8 +56,6 @@ def collate_fn(model: DiarizeGPT) -> callable:
                 l[1] = round(l[1] / Q) + 2
                 l[0] = round(l[0] / Q) + 2
                 l[2] = model.num_embs - 1 - (ord(l[2]) - ord("A"))
-
-            random.shuffle(b)
         
         audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True)
         audios = audios.permute(0, 2, 1)
