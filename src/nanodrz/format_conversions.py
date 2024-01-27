@@ -79,6 +79,17 @@ def str_to_labels(labels: str) -> list[str]:
         ret.append(float(l[0]), float(l[1]), l[2])
     return ret
 
+def labels_to_annotation(labels):
+    
+    from pyannote.core import Annotation, Segment
+    
+    annotation = Annotation()
+    for l in labels:
+        annotation[Segment(l[0], l[1])] = l[2]
+
+    return annotation
+
+
 if __name__ == "__main__":
     example="""
     SPEAKER azisu 1 7.960000 5.720000 <NA> <NA> spk00 <NA> <NA>

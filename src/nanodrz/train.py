@@ -1,10 +1,8 @@
-import logging
 import os
 import time
 from contextlib import nullcontext
 
 import click
-import math
 import torch
 import torch.multiprocessing as mp
 from torch.distributed import destroy_process_group, init_process_group
@@ -20,9 +18,7 @@ from nanodrz.model import DiarizeGPT as Model
 from nanodrz import optim
 from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
 from pyannote.metrics.diarization import DiarizationErrorRate
-from pyannote.core import Annotation, Segment
-import numpy as np
-
+from nanodrz import format_conversions as format
 
 def train(rank: int, world_size: int, config: Config, dev: bool = False):
     if world_size > 1:
@@ -76,7 +72,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     device = torch.cuda.current_device()
 
     model = Model(config).cuda(rank)
-
+    
     ds = GeneratorIterableDataset(
         data.artificial_drz_generator(
             speakers,
@@ -85,6 +81,26 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
             **datacfg.model_dump(),
         )
     )
+
+    # Determine the batch size possible
+
+    collate = collate_fn(model)
+
+    device_properties = torch.cuda.get_device_properties(device)
+    total_memory = device_properties.total_memory
+
+    print(f"Total Memory: {total_memory} bytes")
+    
+    # if B is None:
+    #     for B in range(datacfg.batch_size):
+    #         try:
+    #             out = model(
+    #                 torch.rand(B, 1, datacfg.max_secs),
+    #             )
+    #             collate(torch.rand(1, datacfg.max_secs), labe)
+    #         except torch.cuda.OutOfMemoryError:
+    #             model
+
     train_dl = DataLoader(
         ds,
         batch_size=B,
@@ -276,10 +292,10 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
                 for i, audio in enumerate(batch["audio"]):
                     # For now we stop the model generating too far
-                    labels = model.generate(audio, max_steps=len(batch["labels"][i]))
-                    truth = batch[i]
-                    labels_annotation = utils.visualise_annotation(labels)
-                    truth_annotation = utils.visualise_annotation(truth)
+                    labels = model.generate(audio, max_steps=len(batch["truth"][i])*3)
+                    truth = batch["truth"][i]
+                    labels_annotation = format.labels_to_annotation(labels)
+                    truth_annotation = format.labels_to_annotation(truth)
                     der += DiarizationErrorRate()(truth_annotation, labels_annotation)
 
                     # Sort the lists by start
@@ -295,9 +311,9 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                         distances.append(distance)
 
                     # Print the distances
-                    distance_mean += math.mean(distances)
+                    distance_mean += sum(distances) / len(distances)
 
-                der /= B
+                der = B
                 distance_mean /= B
 
                 wandb_log({

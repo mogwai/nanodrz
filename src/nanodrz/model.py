@@ -226,6 +226,12 @@ class DiarizeGPT(Module):
         top_p: float = 0.0,
     ):
         cfg = self.config.model
+
+        if len(audio.shape) == 1:
+            audio = audio[None]
+
+        if len(audio.shape) == 2:
+            audio = audio[None]
         
         if cfg.audio_encode == "dac":
             with torch.no_grad():
