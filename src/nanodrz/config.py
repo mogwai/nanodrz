@@ -37,7 +37,8 @@ class DataConfig(BaseModel):
 class TrainConfig(BaseModel):
     total_steps: int = 1_000_000
 
-    batch_size: int = 4
+    # If this is set to none, then the batch size will be determine automatically
+    batch_size: int = None
     # How many steps to do the forward before computing backward
     grad_acc_steps: int = 21
 

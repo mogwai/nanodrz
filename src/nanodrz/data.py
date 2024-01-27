@@ -1,13 +1,10 @@
 import glob
 import itertools
 import os
-import math
 import random
-import time
 from dataclasses import dataclass
 from os.path import expanduser
 
-import numpy as np
 import torch
 import torchaudio
 from torch.nn.utils.rnn import pad_sequence
@@ -52,15 +49,14 @@ def collate_fn(model: DiarizeGPT) -> callable:
 
         Q = model.config.data.max_secs / model.num_time_tokens
         
-        truth = labels.clone()
+        truth = [[l.copy() for l in b] for b in labels]
 
         for b in labels:    
             for l in b:
                 l[1] = round(l[1] / Q) + 2
-                l[0] = round(l[0] / Q) + 2  # EOS PAD
+                l[0] = round(l[0] / Q) + 2
                 l[2] = model.num_embs - 1 - (ord(l[2]) - ord("A"))
-            
-            # Pix2Seq said this produced the best result
+
             random.shuffle(b)
         
         audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True)
@@ -98,7 +94,6 @@ def artificial_drz_generator(
         audio = model.dac.preprocess(audio2, sr)
 
         if audio.shape[-1] / sr > max_secs:
-            print(audio2.shape[-1], audio.shape[-1], audio.shape[-1]/sr)
             continue
 
         yield audio, label

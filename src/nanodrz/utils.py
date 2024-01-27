@@ -13,6 +13,7 @@ from functools import wraps
 import torch.nn as nn
 import torchaudio
 from torch import Tensor
+from nanodrz.format_conversions import labels_to_annotation
 from torchaudio.transforms import Resample
 
 from nanodrz.constants import CACHE_DIR
@@ -228,7 +229,9 @@ def to_device(obj: [nn.Module, Tensor, list, dict], targets: str | list[str]):
     """
     Takes obj and iterates through the keys putting them on the `device`
     """
-    if isinstance(obj, Tensor) or isinstance(obj, nn.Module):
+    if isinstance(obj,  (float, int, str)):
+        return obj
+    elif isinstance(obj, Tensor) or isinstance(obj, nn.Module):
         return obj.to(targets)
     elif isinstance(obj, (list, tuple)):
         return [to_device(item, targets) for item in obj]
@@ -238,13 +241,11 @@ def to_device(obj: [nn.Module, Tensor, list, dict], targets: str | list[str]):
         raise Exception("Must be called with list, dict, Tensor or ")
 
 
+
+
 def visualise_annotation(labels: list):
     from IPython.display import display
-    from pyannote.core import Annotation, Segment
-
-    annotation = Annotation()
-    for l in labels:
-        annotation[Segment(l[0], l[1])] = l[2]
+    annotation = labels_to_annotation(labels)
     display(annotation)
     return annotation
 
