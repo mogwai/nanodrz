@@ -60,8 +60,8 @@ class DiarizeGPT(Module):
             self.audio_proj = nn.Linear(self.dac.latent_dim, dmodel)
             self.init_mod_weights += [self.audio_proj]
         elif modelcfg.audio_encode == "dac-codes":
-            self.whisperconv = WhisperConvs(dmodel, self.dac.codebook_dim*self.dac.n_codebooks)
-            self.init_mod_weights += [self.whisperconv]
+            self.whispconv = WhisperConvs(dmodel, self.dac.codebook_dim*self.dac.n_codebooks)
+            self.init_mod_weights += [self.whispconv]
 
         # Positional Encoding
         self.audio_pos_emb = ScaledSinusoidalEmbedding(dmodel)
@@ -153,17 +153,18 @@ class DiarizeGPT(Module):
             audio = self.audio_proj(audio)
 
         elif modelcfg.audio_encode == "dac-codes":
-            codes = self.dac.encode(audio)[1]
-
-            audio = [
-                self.dac.quantizer.quantizers[i].codebook(codes[:, i])
-                for i in range(len(self.dac.quantizer.quantizers))
-            ]
-            audio = torch.cat(audio, dim=-1)
-            # Dac Reduction of length
-            audio_lengths = audio_lengths // 320
+            with torch.no_grad():
+                codes = self.dac.encode(audio)[1]
+                audio = [
+                    self.dac.quantizer.quantizers[i].codebook(codes[:, i])
+                    for i in range(len(self.dac.quantizer.quantizers))
+                ]
+                audio = torch.cat(audio, dim=-1)
+                # Dac length reduction
+                audio_lengths = audio_lengths // 320
+            
             audio = self.whispconv(audio)
-            # Whisper reduction
+            # Whisper length reduction
             audio_lengths = audio_lengths // 2
 
         text_embs = self.text_emb(labels) + self.text_pos_emb(
@@ -241,7 +242,7 @@ class DiarizeGPT(Module):
                 for i in range(len(self.dac.quantizer.quantizers))
             ]
             audio = torch.cat(audio, dim=-1)
-            audio = self.whisperconv(audio)
+            audio = self.whispconv(audio)
 
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 
@@ -303,11 +304,9 @@ class DiarizeGPT(Module):
 
         for start, end, label in tokens.split(3):
             # Unquantize the start and end times
-            print(start, end, label)
             start = start * self.config.data.max_secs / self.num_time_tokens
             end = end * self.config.data.max_secs / self.num_time_tokens
             label = chr(ord("A") + (self.num_embs - (label + 1)).item())
-            print(start, end, label)
             nlabels.append([start.item(), end.item(), label])
 
         return nlabels

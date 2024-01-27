@@ -51,6 +51,8 @@ def collate_fn(model: DiarizeGPT) -> callable:
         labels = [b[1] for b in batch]
 
         Q = model.config.data.max_secs / model.num_time_tokens
+        
+        truth = labels.clone()
 
         for b in labels:    
             for l in b:
@@ -70,6 +72,7 @@ def collate_fn(model: DiarizeGPT) -> callable:
         return {
             "audio": audios,
             "labels": labels,
+            "truth": truth,
             "audio_lengths": torch.tensor(audio_lengths),
             "label_lengths": torch.tensor(label_lengths),
         }
