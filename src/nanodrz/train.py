@@ -4,6 +4,7 @@ import time
 from contextlib import nullcontext
 
 import click
+import math
 import torch
 import torch.multiprocessing as mp
 from torch.distributed import destroy_process_group, init_process_group
@@ -18,6 +19,9 @@ from nanodrz.data import GeneratorIterableDataset, collate_fn
 from nanodrz.model import DiarizeGPT as Model
 from nanodrz import optim
 from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
+from pyannote.metrics.diarization import DiarizationErrorRate
+from pyannote.core import Annotation, Segment
+import numpy as np
 
 
 def train(rank: int, world_size: int, config: Config, dev: bool = False):
@@ -46,6 +50,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
             project="nano-diarization",
             config=config.model_dump(),
             settings=wandb.Settings(),
+            name="dev" if dev else None,
         )
 
     # Get Speakers
@@ -187,6 +192,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 with torch.amp.autocast(
                     enabled=True, device_type=device_type, dtype=dtype
                 ):
+                    del batch["truth"]
                     loss = model(**batch)
                     loss = loss / gradient_accumulation_steps
 
@@ -261,6 +267,45 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 model.train()
 
             if step % train.checkpoint_every == 0 and is_main_process:
+                
+                # Evaluation
+                batch = next(train_dl_iter)
+                batch = to_device(batch, "cuda")
+                der = 0
+                distance_mean = 0
+
+                for i, audio in enumerate(batch["audio"]):
+                    # For now we stop the model generating too far
+                    labels = model.generate(audio, max_steps=len(batch["labels"][i]))
+                    truth = batch[i]
+                    labels_annotation = utils.visualise_annotation(labels)
+                    truth_annotation = utils.visualise_annotation(truth)
+                    der += DiarizationErrorRate()(truth_annotation, labels_annotation)
+
+                    # Sort the lists by start
+                    truth.sort(key=lambda x: x[0])
+                    labels.sort(key=lambda x: x[0])
+
+                    # Calculate the absolute distance between starts and ends
+                    distances = []
+                    for i in range(len(truth)):
+                        truth_start, truth_end, _ = truth[i]
+                        labels_start, labels_end, _ = labels[i]
+                        distance = abs(truth_start - labels_start) + abs(truth_end - labels_end)
+                        distances.append(distance)
+
+                    # Print the distances
+                    distance_mean += math.mean(distances)
+
+                der /= B
+                distance_mean /= B
+
+                wandb_log({
+                    "eval/DER": der,
+                    "step": step,
+                    "eval/distance_mean": distance_mean,
+                })
+
                 checkpoint = {
                     "config": config.model_dump(),
                     "step": step,
@@ -307,10 +352,10 @@ def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
 
     if dev:
         print("Running in dev mode (smaller dataset, batch size, fewer epochs, etc.)")
-        config.train.val_every = 9
+        config.train.val_every = 3
         config.train.batch_size = 2
-        config.train.total_steps = 10
-        config.train.checkpoint_every = 11
+        config.train.total_steps = 2
+        config.train.checkpoint_every = 2
         config.train.grad_acc_steps = 1
         config.data.num_workers = 0
 
