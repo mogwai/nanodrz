@@ -54,18 +54,20 @@ class DiarizeGPT(Module):
 
         self.start_diarize_emb = nn.Parameter(torch.zeros(dmodel))
         torch.nn.init.normal_(self.start_diarize_emb, mean=0.0, std=0.02)
-        
+
         self.init_mod_weights = []
         if modelcfg.audio_encode == "dac":
             self.audio_proj = nn.Linear(self.dac.latent_dim, dmodel)
             self.init_mod_weights += [self.audio_proj]
         elif modelcfg.audio_encode == "dac-codes":
-            self.whispconv = WhisperConvs(dmodel, self.dac.codebook_dim*self.dac.n_codebooks)
+            self.whispconv = WhisperConvs(
+                dmodel, self.dac.codebook_dim * self.dac.n_codebooks
+            )
             self.init_mod_weights += [self.whispconv]
 
         # Positional Encoding
         self.audio_pos_emb = ScaledSinusoidalEmbedding(dmodel)
-        self.text_pos_emb = ScaledSinusoidalEmbedding(dmodel)        
+        self.text_pos_emb = ScaledSinusoidalEmbedding(dmodel)
 
         # This is to embed the position of the time in the token representing the audio
         if modelcfg.use_time_pos:
@@ -149,7 +151,7 @@ class DiarizeGPT(Module):
             with torch.no_grad():
                 audio = self.dac.encode(audio)[0]
                 audio = rearrange(audio, "B L T -> B T L")
-            
+
             audio = self.audio_proj(audio)
 
         elif modelcfg.audio_encode == "dac-codes":
@@ -162,7 +164,7 @@ class DiarizeGPT(Module):
                 audio = torch.cat(audio, dim=-1)
                 # Dac length reduction
                 audio_lengths = audio_lengths // 320
-            
+
             audio = self.whispconv(audio)
             # Whisper length reduction
             audio_lengths = audio_lengths // 2
@@ -232,12 +234,12 @@ class DiarizeGPT(Module):
 
         if len(audio.shape) == 2:
             audio = audio[None]
-        
+
         if cfg.audio_encode == "dac":
             with torch.no_grad():
                 audio = self.dac.encode(audio)[0]
                 audio = rearrange(audio, "B L T -> B T L")
-            
+
             audio = self.audio_proj(audio)
 
         elif cfg.audio_encode == "dac-codes":
@@ -277,8 +279,7 @@ class DiarizeGPT(Module):
             else:
                 # Prevent class prediction
                 logits[..., -self.num_classes :] = torch.finfo(logits.dtype).min
-         
-        
+
             probs = F.softmax(logits / temperature, dim=-1)
             eos_probs = probs[..., self.eos_idx]
             if torch.any(eos_probs > 0.1):
