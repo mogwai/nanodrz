@@ -375,16 +375,13 @@ def find_nonsilence_chunks(
     return chunks, silence_indexes
 
 
-def load_what_you_can(checkpoint, model):
+def load_what_you_can(checkpoint:dict, model:nn.Module):
     """
     This method takes a checkpoint and loads as many weights from it as possible:
 
     If they are the same shape, it just loads normally
 
-    If the checkpoints shape is larger [1, 512] vs [1, 256] 
-
-    If the checkpoints shape is smaller [1, 512] vs [1, 1024], then what is available is loaded.
-
+    Will load the smallest shape otherwise.
     """
     model_state_dict = model.state_dict()
     checkpoint_state_dict = checkpoint
