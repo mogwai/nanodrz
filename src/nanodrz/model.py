@@ -190,6 +190,7 @@ class DiarizeGPT(Module):
             len_coef /= 2
 
         elif modelcfg.audio_encode == "mel":
+            len_coef /= 256
             audio = self.whispconv(audio)
             len_coef /= 2
             audio_lengths = audio_lengths // 2
@@ -231,8 +232,8 @@ class DiarizeGPT(Module):
         embs = pad_sequence(embs, batch_first=True)
         
         # Fixed size for torch.compile
-        # max audio len sequence + max labels
-        max_seq_len = int(data.max_secs*modelcfg.sample_rate*len_coef) + 20*3
+        # max audio len sequence + max labels + drz_cmd
+        max_seq_len = int(data.max_secs*modelcfg.sample_rate*len_coef) + 30*3 + 1
         embs = torch.nn.functional.pad(embs, (0, 0, 0, max(0, max_seq_len - embs.size(1)), 0, 0))
         x = self.decoder(embs)
 

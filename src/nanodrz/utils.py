@@ -419,6 +419,7 @@ def mel_spec(
             win_size, device=audio.device
         )
 
+    
     y = torch.nn.functional.pad(
         audio.unsqueeze(1),
         (int((n_fft - hop_size) / 2), int((n_fft - hop_size) / 2)),
