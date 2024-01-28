@@ -68,6 +68,9 @@ class TrainConfig(BaseModel):
     log_every: int = 1
     watch_every: int = 1000
 
+    regression_win: int = 200
+    regression_smoothing:float = 0.95
+
     @property
     def is_resuming(self) -> bool:
         return self.checkpoint is not None
