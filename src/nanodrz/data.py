@@ -42,9 +42,16 @@ class GeneratorIterableDataset(IterableDataset):
 
 
 def collate_fn(model: DiarizeGPT) -> callable:
+    cfg = model.config
+
     def _collate(batch):
         audios = [b[0] for b in batch]
-        audio_lengths = [a.shape[-1] for a in audios]
+        audio_lengths = torch.tensor([a.shape[-1] for a in audios])
+
+        if cfg.model.audio_encode == "mel":
+            audios = [model.mel(a)[0] for a in audios]
+            audio_lengths = audio_lengths // cfg.data.hop_length
+
         labels = [b[1] for b in batch]
 
         Q = model.config.data.max_secs / model.num_time_tokens
@@ -60,18 +67,19 @@ def collate_fn(model: DiarizeGPT) -> callable:
         audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True)
         audios = audios.permute(0, 2, 1)
         labels = [torch.tensor(l).flatten().long() for l in labels]
-        label_lengths = [len(b) for b in labels]
+        label_lengths = torch.tensor([len(b) for b in labels])
         labels = pad_sequence(labels, batch_first=True)
-
+        print(label_lengths)
         return {
             "audio": audios,
             "labels": labels,
             "truth": truth,
-            "audio_lengths": torch.tensor(audio_lengths),
-            "label_lengths": torch.tensor(label_lengths),
+            "audio_lengths": audio_lengths,
+            "label_lengths": label_lengths,
         }
 
     return _collate
+
 
 # Datasets to download:
 
@@ -127,6 +135,7 @@ def gather_speakers_from_folder(
 
     return speakers
 
+
 def libritts_test() -> list[Speaker]:
     folder = download.dl_libritts_test()
     return gather_speakers_from_folder(
@@ -158,12 +167,14 @@ def librilight_medium() -> list[Speaker]:
         lambda x: os.path.basename(x).split("/")[-3],
     )
 
+
 def librilight_large() -> list[Speaker]:
     folder = download.dl_libri_light_large()
     return gather_speakers_from_folder(
         folder,
         lambda x: os.path.basename(x).split("/")[-3],
     )
+
 
 def artificial_drz_generator(
     model: torch.nn.Module,
@@ -173,14 +184,15 @@ def artificial_drz_generator(
     **kwargs,
 ):
     while True:
-        audio2, label = artificial_diarisation_sample(
+        audio, label = artificial_diarisation_sample(
             speakers,
             sr=sr,
             max_secs=max_secs,
             **kwargs,
         )
 
-        audio = model.dac.preprocess(audio2, sr)
+        if hasattr(model, "dac"):
+            audio = model.dac.preprocess(audio, sr)
 
         if audio.shape[-1] / sr > max_secs:
             continue
@@ -202,7 +214,7 @@ def artificial_diarisation_sample(
     names, labels = [], []
 
     cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
-    seconds = random.uniform(min_secs, max_secs)
+    seconds = random.uniform(min_secs, max_secs - 1)
 
     last_speaker = None
     # While we're still less than the target secs
@@ -257,4 +269,3 @@ def artificial_diarisation_sample(
 
 def min_duration(min_secs: int = 0.1) -> callable:
     return lambda utt: utt.seconds > min_secs
-

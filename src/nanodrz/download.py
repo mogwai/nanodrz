@@ -1,4 +1,3 @@
-import requests
 import tarfile
 
 from nanodrz.constants import CACHE_DIR
@@ -7,10 +6,7 @@ from os import path, makedirs
 from tqdm import tqdm
 import os
 import subprocess
-import os
-import subprocess
-import subprocess
-import os
+from urllib import request
 
 
 def dl_scp_file(link: str):
@@ -57,22 +53,26 @@ def dl_scp_file(link: str):
 def dl_http_file(link: str):
     file_path = path.join(CACHE_DIR, path.basename(link))
 
-    if not path.exists(file_path):
-        response = requests.get(link, stream=True)
-        total_size = int(response.headers.get("content-length", 0))
-        block_size = 1024 * 1024  # 1 MB
-        progress_bar = tqdm(
-            total=total_size,
-            desc=link,
-            unit="B",
-            unit_scale=True,
-            leave=False,
-        )
+    if not os.path.exists(file_path):
+        with request.urlopen(link) as response, open(file_path, "wb") as file:
+            total_size = int(response.headers.get("content-length", 0))
+            block_size = 1024 * 1024 * 5 # 5MB
+            progress_bar = tqdm(
+                total=total_size,
+                desc=link,
+                unit="B",
+                unit_scale=True,
+                leave=False,
+            )
 
-        with open(file_path, "wb") as file:
-            for data in response.iter_content(block_size):
+            while True:
+                data = response.read(block_size)
+                if not data:
+                    break
                 progress_bar.update(len(data))
                 file.write(data)
+
+            progress_bar.close()
 
     return file_path
 
@@ -92,7 +92,7 @@ def dl_libritts_test():
         mode = "r"
         if "gz" in file_path:
             mode += ":gz"
-        
+
         tar = tarfile.open(file_path, mode=mode)
         tar.extractall(extract_folder)
         tar.close()
@@ -122,7 +122,7 @@ def dl_libritts_dev():
 def dl_libri_light_small():
     """
     https://github.com/facebookresearch/libri-light/blob/main/data_preparation/README.md
-    
+
     https://dl.fbaipublicfiles.com/librilight/data/small.tar
     """
 
@@ -136,17 +136,18 @@ def dl_libri_light_small():
         mode = "r"
         if "gz" in file_path:
             mode += ":gz"
-        
+
         tar = tarfile.open(file_path, mode=mode)
         tar.extractall(extract_folder)
         tar.close()
 
     return path.join(extract_folder, "small")
 
+
 def dl_libri_light_medium():
     """
     https://github.com/facebookresearch/libri-light/blob/main/data_preparation/README.md
-    
+
     https://dl.fbaipublicfiles.com/librilight/data/medium.tar
     """
 
@@ -160,7 +161,7 @@ def dl_libri_light_medium():
         mode = "r"
         if "gz" in file_path:
             mode += ":gz"
-        
+
         tar = tarfile.open(file_path, mode=mode)
         tar.extractall(extract_folder)
         tar.close()
@@ -171,7 +172,7 @@ def dl_libri_light_medium():
 def dl_libri_light_large():
     """
     https://github.com/facebookresearch/libri-light/blob/main/data_preparation/README.md
-    
+
     https://dl.fbaipublicfiles.com/librilight/data/large.tar
     """
 
@@ -185,13 +186,12 @@ def dl_libri_light_large():
         mode = "r"
         if "gz" in file_path:
             mode += ":gz"
-        
+
         tar = tarfile.open(file_path, mode=mode)
         tar.extractall(extract_folder)
         tar.close()
 
     return path.join(extract_folder, "large")
-
 
 
 if __name__ == "__main__":
@@ -201,4 +201,3 @@ if __name__ == "__main__":
     for file in files:
         print(file)
     pass
-    

@@ -61,24 +61,19 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     device_type = "cuda"
 
-    # Test what dtype we can use
-    if train.amp_dtype is None:
-        dtype = (
-            torch.bfloat16 if utils.autocast_support(torch.bfloat16) else torch.float16
-        )
-    else:
-        dtype = torch.bfloat16 if train.amp_dtype == "bfloat16" else torch.float16
+    dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'
 
     torch.cuda.set_device(rank)
     device = torch.cuda.current_device()
 
     model = Model(config).cuda(rank)
+    model = torch.compile(model)
 
     ds = GeneratorIterableDataset(
         data.artificial_drz_generator(
-            speakers,
             model,
-            model.dac.sample_rate,
+            speakers,
+            model.config.model.sample_rate,
             **datacfg.model_dump(),
         )
     )
@@ -200,7 +195,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
             for micro_step in range(gradient_accumulation_steps):
                 hours_seen += (
-                    batch["audio_lengths"].sum() / model.dac.sample_rate / 60 / 60 / 60
+                    batch["audio_lengths"].sum() / config.model.sample_rate / 60 / 60 / 60
                 )
                 model.require_backward_grad_sync = (
                     micro_step == gradient_accumulation_steps - 1
