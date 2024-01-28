@@ -75,6 +75,58 @@ def collate_fn(model: DiarizeGPT) -> callable:
 
 # Datasets to download:
 
+
+def gather_speakers_from_folder(
+    folder: str,
+    retrieve_speaker: callable,
+    exts: list[str] = ["wav", "opus", "mp3"],
+    file_filters: list[callable] = [],
+):
+    """
+    Retrieves all the audio files from a specific directory recursively.
+
+    param file_filters: callable returning true for files that don't pass
+    look at min_duration
+    """
+
+    folder = expanduser(folder)
+    wav_files = itertools.chain(
+        *[glob.glob(folder + f"/**/*.{ext}", recursive=True) for ext in exts]
+    )
+    speakers: list[Speaker] = []
+
+    for file in wav_files:
+        # Extract the speaker name from the file path
+        speaker_name = retrieve_speaker(file)
+        utt = Utterance()
+        utt.file_url = file
+
+        stop = False
+        for check in file_filters:
+            if not check(utt):
+                stop = True
+                break
+        if stop:
+            continue
+
+        # Check if the speaker object already exists
+        speaker = None
+        for s in speakers:
+            if s.name == speaker_name:
+                speaker = s
+                break
+
+        # If the speaker object doesn't exist, create a new one
+        if speaker is None:
+            speaker = Speaker()
+            speaker.name = speaker_name
+            speakers.append(speaker)
+            speaker.utts = []
+
+        speaker.utts.append(utt)
+
+    return speakers
+
 def libritts_test() -> list[Speaker]:
     folder = download.dl_libritts_test()
     return gather_speakers_from_folder(
@@ -201,58 +253,6 @@ def artificial_diarisation_sample(
         )
 
     return audio, labels
-
-
-def gather_speakers_from_folder(
-    folder: str,
-    retrieve_speaker: callable,
-    exts: list[str] = ["wav", "opus", "mp3"],
-    file_filters: list[callable] = [],
-):
-    """
-    Retrieves all the audio files from a specific directory recursively.
-
-    param file_filters: callable returning true for files that don't pass
-    look at min_duration
-    """
-
-    folder = expanduser(folder)
-    wav_files = itertools.chain(
-        *[glob.glob(folder + f"/**/*.{ext}", recursive=True) for ext in exts]
-    )
-    speakers: list[Speaker] = []
-
-    for file in wav_files:
-        # Extract the speaker name from the file path
-        speaker_name = retrieve_speaker(file)
-        utt = Utterance()
-        utt.file_url = file
-
-        stop = False
-        for check in file_filters:
-            if not check(utt):
-                stop = True
-                break
-        if stop:
-            continue
-
-        # Check if the speaker object already exists
-        speaker = None
-        for s in speakers:
-            if s.name == speaker_name:
-                speaker = s
-                break
-
-        # If the speaker object doesn't exist, create a new one
-        if speaker is None:
-            speaker = Speaker()
-            speaker.name = speaker_name
-            speakers.append(speaker)
-            speaker.utts = []
-
-        speaker.utts.append(utt)
-
-    return speakers
 
 
 def min_duration(min_secs: int = 0.1) -> callable:
