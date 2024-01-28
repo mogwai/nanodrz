@@ -63,7 +63,7 @@ class Attention(nn.Module):
         # einop = "B T (split heads hs) -> split B heads T hs"
         # q, k, v = rearrange(self.qkv(x), einop, heads=self.n_head, split=3)
 
-        q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
+        q, k, v  = self.qkv(x).split(self.n_embd, dim=2)
         
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)

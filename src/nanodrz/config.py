@@ -25,7 +25,7 @@ class ModelConfig(BaseModel):
 
 class DataConfig(BaseModel):
     num_workers: int = 8
-    max_secs: float = 20.0
+    max_secs: float = 30.0
     min_secs: float = 10.0
     interrupt_max: float = 0.1
     silence_max: float = 1

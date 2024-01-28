@@ -61,13 +61,14 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     device_type = "cuda"
 
-    dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'
+    dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
 
     torch.cuda.set_device(rank)
     device = torch.cuda.current_device()
 
     model = Model(config).cuda(rank)
-    model = torch.compile(model)
+    if not dev:
+        model = torch.compile(model)
 
     ds = GeneratorIterableDataset(
         data.artificial_drz_generator(
@@ -84,8 +85,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     device_properties = torch.cuda.get_device_properties(device)
     total_memory = device_properties.total_memory
-
-    print(f"Total Memory: {total_memory} bytes")
 
     # if B is None:
     #     for B in range(datacfg.batch_size):
@@ -214,6 +213,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                     continue
 
                 loss.backward()
+                print(f"{time.perf_counter()-t1}")
                 batch = to_device(next(train_dl_iter), device)
 
             if is_main_process and step == 0:

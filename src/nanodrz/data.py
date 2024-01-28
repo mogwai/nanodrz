@@ -69,7 +69,7 @@ def collate_fn(model: DiarizeGPT) -> callable:
         labels = [torch.tensor(l).flatten().long() for l in labels]
         label_lengths = torch.tensor([len(b) for b in labels])
         labels = pad_sequence(labels, batch_first=True)
-        print(label_lengths)
+        print("lens", label_lengths, audio_lengths)
         return {
             "audio": audios,
             "labels": labels,
@@ -194,7 +194,7 @@ def artificial_drz_generator(
         if hasattr(model, "dac"):
             audio = model.dac.preprocess(audio, sr)
 
-        if audio.shape[-1] / sr > max_secs:
+        if audio.shape[-1] < 1 or audio.shape[-1] / sr > max_secs:
             continue
 
         yield audio, label
@@ -256,9 +256,6 @@ def artificial_diarisation_sample(
             i = names.index(speaker.name)
 
         name_label = chr(ord("A") + i)
-
-        if start_label > 60:
-            breakpoint()
 
         labels.append(
             [start_label, start_label + random_sample.shape[-1] / sr, name_label]

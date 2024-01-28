@@ -3,12 +3,12 @@ train:
   continue_from_checkpoint: false
   total_steps: 30_000
   max_lr: 1e-4
-  batch_size: 2
+  batch_size: 4
 
 model:
   num_embs: 352
-  dmodel: 1024
-  layers: 8
+  dmodel: 1536 
+  layers: 12
   audio_encode: mel
 
 data:
