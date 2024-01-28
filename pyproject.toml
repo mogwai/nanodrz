@@ -10,6 +10,7 @@ dependencies = [
     "click",
     "descript-audio-codec",
     "einop",
+    "librosa",
     "textgrid",
     "torch",
     "torchaudio",

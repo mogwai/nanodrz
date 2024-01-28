@@ -20,20 +20,21 @@ class ModelConfig(BaseModel):
     audio_encode: str = "dac"
     dac_model: str = "16khz"
     sample_rate: int = 16000
-    # Turn this on this if you have an ampere GPU
-    use_flash_attn: bool = False
     use_time_pos: bool = True
     num_embs: int = 512
 
 class DataConfig(BaseModel):
     num_workers: int = 8
-    max_secs: float = 30.0
+    max_secs: float = 20.0
     min_secs: float = 10.0
     interrupt_max: float = 0.1
     silence_max: float = 1
     num_speakers: int = 8
 
-
+    # Mel Config
+    n_mels: int = 120
+    hop_length: int = 256
+    
 class TrainConfig(BaseModel):
     total_steps: int = 1_000_000
 
@@ -69,7 +70,7 @@ class TrainConfig(BaseModel):
     watch_every: int = 1000
 
     regression_win: int = 200
-    regression_smoothing:float = 0.95
+    regression_smoothing: float = 0.95
 
     @property
     def is_resuming(self) -> bool:

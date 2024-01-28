@@ -60,8 +60,15 @@ class Attention(nn.Module):
     def forward(self, x, mask=None):
         B, T, C = x.size()
 
-        einop = "B T (split heads hs) -> split B heads T hs"
-        q, k, v = rearrange(self.qkv(x), einop, heads=self.n_head, split=3)
+        # einop = "B T (split heads hs) -> split B heads T hs"
+        # q, k, v = rearrange(self.qkv(x), einop, heads=self.n_head, split=3)
+
+        q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
+        
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+
         y = torch.nn.functional.scaled_dot_product_attention(
             q,
             k,
@@ -164,7 +171,6 @@ class WhisperConvs(nn.Module):
         self.conv2 = nn.Conv1d(dmodel, dmodel, kernel_size=3, stride=2, padding=1)
 
     def forward(self, x: Tensor):
-        x = x.permute(0, 2, 1)
         x = F.gelu(self.conv1(x))
         x = F.gelu(self.conv2(x))
         return x.permute(0, 2, 1)

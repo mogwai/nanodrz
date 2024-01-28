@@ -7,8 +7,9 @@ from torch.nn.utils.rnn import pad_sequence
 
 from nanodrz.config import ModelConfig, Config
 from nanodrz.modules import ScaledSinusoidalEmbedding, Decoder, WhisperConvs
-from nanodrz.utils import to_device, make_padding_mask
+from nanodrz.utils import to_device, make_padding_mask, mel_spec
 from nanodrz import utils
+from functools import partial
 
 import dac
 import torch
@@ -27,6 +28,7 @@ class DiarizeGPT(Module):
 
         self.config = config
         modelcfg = config.model
+        datacfg = config.data
         dmodel = modelcfg.dmodel
 
         # Let's predict at least 8 speakers
@@ -56,12 +58,24 @@ class DiarizeGPT(Module):
         torch.nn.init.normal_(self.start_diarize_emb, mean=0.0, std=0.02)
 
         self.init_mod_weights = []
+
+        # Determine the encoding o
         if modelcfg.audio_encode == "dac":
             self.audio_proj = nn.Linear(self.dac.latent_dim, dmodel)
             self.init_mod_weights += [self.audio_proj]
         elif modelcfg.audio_encode == "dac-codes":
             self.whispconv = WhisperConvs(
                 dmodel, self.dac.codebook_dim * self.dac.n_codebooks
+            )
+            self.init_mod_weights += [self.whispconv]
+        elif modelcfg.audio_encode == "mel":
+            del self.dac
+            self.whispconv = WhisperConvs(
+                dmodel,
+                datacfg.n_mels,
+            )
+            self.mel = partial(
+                mel_spec, n_mels=datacfg.n_mels, sr=modelcfg.sample_rate
             )
             self.init_mod_weights += [self.whispconv]
 
@@ -96,7 +110,8 @@ class DiarizeGPT(Module):
 
     def _freeze_components(self):
         # Freeze DAC
-        [p.requires_grad_(False) for p in self.dac.parameters()]
+        if hasattr(self, "dac"):
+            [p.requires_grad_(False) for p in self.dac.parameters()]
 
     def train(self, mode: bool = True):
         res = super().train(mode)
@@ -144,10 +159,13 @@ class DiarizeGPT(Module):
     ):
         B = audio.shape[0]
         modelcfg = self.config.model
+        data = self.config.data
+        len_coef = 1
 
         if modelcfg.audio_encode == "dac":
             # DAC Z Latent Reduction factor
             audio_lengths = audio_lengths // 320
+            len_coef /= 320
             with torch.no_grad():
                 audio = self.dac.encode(audio)[0]
                 audio = rearrange(audio, "B L T -> B T L")
@@ -164,10 +182,19 @@ class DiarizeGPT(Module):
                 audio = torch.cat(audio, dim=-1)
                 # Dac length reduction
                 audio_lengths = audio_lengths // 320
-
-            audio = self.whispconv(audio)
+                len_coef /= 320
+        
+            audio = self.whispconv(audio.permute(0, 2, 1))
             # Whisper length reduction
             audio_lengths = audio_lengths // 2
+            len_coef /= 2
+
+        elif modelcfg.audio_encode == "mel":
+            audio = self.whispconv(audio)
+            len_coef /= 2
+            audio_lengths = audio_lengths // 2
+
+        audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 
         text_embs = self.text_emb(labels) + self.text_pos_emb(
             torch.arange(labels.shape[1])
@@ -186,9 +213,7 @@ class DiarizeGPT(Module):
             rearrange(text_embs, "B (b s) L -> B b s L", s=3)[:, :, :2].add_(
                 self.time_pos_emb(time_boundaries)
             )
-
-        audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
-
+            
         embs = []
         for b in range(B):
             emb = torch.cat(
@@ -202,7 +227,13 @@ class DiarizeGPT(Module):
             )
             embs.append(emb)
 
+        
         embs = pad_sequence(embs, batch_first=True)
+        
+        # Fixed size for torch.compile
+        # max audio len sequence + max labels
+        max_seq_len = int(data.max_secs*modelcfg.sample_rate*len_coef) + 20*3
+        embs = torch.nn.functional.pad(embs, (0, 0, 0, max(0, max_seq_len - embs.size(1)), 0, 0))
         x = self.decoder(embs)
 
         text_latents = [
@@ -212,9 +243,7 @@ class DiarizeGPT(Module):
 
         text_latents = pad_sequence(text_latents, batch_first=True)
         text_logits = self.text_head(text_latents).permute(0, 2, 1)
-        loss = F.cross_entropy(text_logits, labels, ignore_index=self.pad_idx)
-
-        return loss
+        return F.cross_entropy(text_logits, labels, ignore_index=self.pad_idx)
 
     @torch.inference_mode()
     def generate(

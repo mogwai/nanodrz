@@ -3,6 +3,7 @@ import random
 import subprocess
 from typing import Union
 
+from librosa.filters import mel as librosa_mel_fn
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -85,6 +86,7 @@ def seed_all(seed: int):
     np.random.seed(seed)
     random.seed(seed)
 
+
 def get_random_states():
     # Get the state of torch, numpy and random libraries random state
     torch_state = torch.get_rng_state()
@@ -92,11 +94,13 @@ def get_random_states():
     random_state = random.getstate()
     return torch_state, np_state, random_state
 
+
 def set_random_states(torch_state, np_state, random_state):
     """Set the state of the libraries"""
     torch.set_rng_state(torch_state)
     np.random.set_state(np_state)
     random.setstate(random_state)
+
 
 def make_padding_mask(lengths: Tensor) -> Tensor:
     T_max = lengths.max()
@@ -222,14 +226,11 @@ def play(audio: [Tensor, np.ndarray, str], sr=16000, autoplay=True):
     display(Audio(audio.cpu().detach(), rate=sr, autoplay=autoplay))
 
 
-
-
-
 def to_device(obj: [nn.Module, Tensor, list, dict], targets: str | list[str]):
     """
     Takes obj and iterates through the keys putting them on the `device`
     """
-    if isinstance(obj,  (float, int, str)):
+    if isinstance(obj, (float, int, str)):
         return obj
     elif isinstance(obj, Tensor) or isinstance(obj, nn.Module):
         return obj.to(targets)
@@ -241,10 +242,9 @@ def to_device(obj: [nn.Module, Tensor, list, dict], targets: str | list[str]):
         raise Exception("Must be called with list, dict, Tensor or ")
 
 
-
-
 def visualise_annotation(labels: list):
     from IPython.display import display
+
     annotation = labels_to_annotation(labels)
     display(annotation)
     return annotation
@@ -271,21 +271,6 @@ def get_file_duration(file: str):
     info = torchaudio.info(file)
     duration = info.num_frames / info.sample_rate
     return duration
-
-
-def autocast_support(dtype):
-    """
-    Check if we support bfloat16
-    """
-    x = torch.zeros(1, 1)
-    try:
-        with torch.amp.autocast(enabled=True, device_type="cuda", dtype=dtype):
-            x = x * 2
-    except RuntimeError:
-        return False
-    return True
-
-
 
 def hash_arguments(args, kwargs):
     arguments = list(args) + list(kwargs.keys()) + list(kwargs.values())
@@ -314,6 +299,7 @@ def cache(location=".cache") -> callable:
         return wrapper
 
     return inner_function
+
 
 @cache(os.path.join(CACHE_DIR, "find_non_silence_chunks"))
 def find_nonsilence_chunks(
@@ -375,7 +361,7 @@ def find_nonsilence_chunks(
     return chunks, silence_indexes
 
 
-def load_what_you_can(checkpoint:dict, model:nn.Module):
+def load_what_you_can(checkpoint: dict, model: nn.Module):
     """
     This method takes a checkpoint and loads as many weights from it as possible:
 
@@ -390,7 +376,7 @@ def load_what_you_can(checkpoint:dict, model:nn.Module):
         if name not in model_state_dict:
             print(f"Ignoring parameter '{name}' because it is not found in the model")
             continue
-            
+
         model_state = model_state_dict[name]
         mshape = model_state.shape
         pshape = param.shape
@@ -398,9 +384,66 @@ def load_what_you_can(checkpoint:dict, model:nn.Module):
         if pshape == mshape:
             model_state.copy_(param)
             continue
-        
-        min_shape = [min(param.shape[i], model_state.shape[i]) for i in range(len(param.shape))]
+
+        min_shape = [
+            min(param.shape[i], model_state.shape[i]) for i in range(len(param.shape))
+        ]
         idxs = torch.meshgrid(*[torch.arange(s) for s in min_shape])
-        model_state[tuple(idxs)].copy_(param[tuple(idxs)])    
+        model_state[tuple(idxs)].copy_(param[tuple(idxs)])
 
     return model.load_state_dict(model_state_dict)
+
+
+def mel_spec(
+    audio: Tensor,
+    sr: int = 16000,
+    n_mels: int = 120,
+    n_fft: int = 1024,
+    hop_size: int = 256,
+    win_size: int = 1024,
+    fmin: int = 0,
+    fmax: int = 8000,
+) -> Tensor:
+    mel_basis: dict[int, Tensor] = {}
+    hann_window = {}
+    center = False
+
+    if fmax not in mel_basis:
+        mel = librosa_mel_fn(
+            sr=sr, n_fft=n_fft, n_mels=n_mels, fmin=fmin, fmax=fmax
+        )
+        mel_basis[str(fmax) + "_" + str(audio.device)] = (
+            torch.from_numpy(mel).float().to(audio.device)
+        )
+        hann_window[str(audio.device)] = torch.hann_window(
+            win_size, device=audio.device
+        )
+
+    y = torch.nn.functional.pad(
+        audio.unsqueeze(1),
+        (int((n_fft - hop_size) / 2), int((n_fft - hop_size) / 2)),
+        mode="reflect",
+    )
+
+    y = y.squeeze(1)
+
+    spec = torch.stft(
+        y,
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window[str(y.device)],
+        center=center,
+        pad_mode="reflect",
+        normalized=False,
+        onesided=True,
+        return_complex=False,
+    )
+    spec = torch.sqrt(spec.pow(2).sum(-1) + (1e-9))
+    spec = torch.matmul(mel_basis[str(fmax) + "_" + str(y.device)], spec)
+    # dynamic_range_compression
+    spec = torch.log(torch.clamp(spec, min=1e-5))
+
+    # Normalise
+    # spec = (spec - 2)/-14
+    return spec

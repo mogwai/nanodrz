@@ -7,9 +7,9 @@ train:
 
 model:
   num_embs: 352
-  dmodel: 1536
-  layers: 12
-  audio_encode: dac-codes
+  dmodel: 1024
+  layers: 8
+  audio_encode: mel
 
 data:
   silence_max: 1
