@@ -60,14 +60,8 @@ class Attention(nn.Module):
     def forward(self, x, mask=None):
         B, T, C = x.size()
 
-        # einop = "B T (split heads hs) -> split B heads T hs"
-        # q, k, v = rearrange(self.qkv(x), einop, heads=self.n_head, split=3)
-
-        q, k, v  = self.qkv(x).split(self.n_embd, dim=2)
-        
-        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        einop = "B T (split heads hs) -> split B heads T hs"
+        q, k, v = rearrange(self.qkv(x), einop, heads=self.n_head, split=3)
 
         y = torch.nn.functional.scaled_dot_product_attention(
             q,

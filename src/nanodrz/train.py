@@ -213,7 +213,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                     continue
 
                 loss.backward()
-                print(f"{time.perf_counter()-t1}")
                 batch = to_device(next(train_dl_iter), device)
 
             if is_main_process and step == 0:
