@@ -69,7 +69,7 @@ def collate_fn(model: DiarizeGPT) -> callable:
         labels = [torch.tensor(l).flatten().long() for l in labels]
         label_lengths = torch.tensor([len(b) for b in labels])
         labels = pad_sequence(labels, batch_first=True)
-        print("lens", label_lengths, audio_lengths)
+
         return {
             "audio": audios,
             "labels": labels,
