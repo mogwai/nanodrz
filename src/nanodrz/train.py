@@ -20,6 +20,7 @@ from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
 from pyannote.metrics.diarization import DiarizationErrorRate
 from nanodrz import format_conversions as format
 
+
 def train(rank: int, world_size: int, config: Config, dev: bool = False):
     if world_size > 1:
         init_process_group(
@@ -27,7 +28,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
             world_size=world_size,
             rank=rank,
         )
-    
+
     torch.cuda.set_device(rank)
 
     start_time = time.time()
@@ -72,7 +73,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     device = torch.cuda.current_device()
 
     model = Model(config).cuda(rank)
-    
+
     ds = GeneratorIterableDataset(
         data.artificial_drz_generator(
             speakers,
@@ -90,7 +91,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     total_memory = device_properties.total_memory
 
     print(f"Total Memory: {total_memory} bytes")
-    
+
     # if B is None:
     #     for B in range(datacfg.batch_size):
     #         try:
@@ -180,12 +181,15 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     )
 
     loss = 0.0
+    losses = []
+    recovery_attempts = 0
+    running = True
 
     if is_main_process:
         print(f"Took {time.time() - start_time:.2f}s to hit training")
 
     with prof:
-        while step < steps:
+        while step < steps and running:
             t1 = time.perf_counter()
             lr = get_lr(
                 step, train.lr_warmup_steps, train.total_steps, train.min_lr, max_lr
@@ -209,6 +213,11 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                     loss = model(**batch)
                     loss = loss / gradient_accumulation_steps
 
+                if torch.isnan(loss):
+                    wandb.alert("Nan Detection", "Stopping!")
+                    running = False
+                    continue
+
                 loss.backward()
                 batch = to_device(next(train_dl_iter), device)
 
@@ -229,12 +238,22 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 prof.step()
 
             if step % train.log_every == 0:
+                loss = loss.item()
+                losses.append(loss)
+                loss_slope = optim.calculate_smoothed_slope(
+                    losses, regression_win=train.regression_win,
+                    smoothing_constant=train.regression_smoothing,
+                )
+                if loss_slope > 0:
+                    wandb.alert("Explosion Warning", "Check loss graph")
+                
                 metrics = {
-                    "train/loss": gradient_accumulation_steps * loss.item(),
+                    "train/loss": gradient_accumulation_steps * loss,
                     "train/grad_norm": grad_norm.item(),
                     "train/lr": lr,
                     "train/batch_duration": t2 - t1,
                     "hours_seen": hours_seen,
+                    "train/loss_slope": loss_slope,
                 }
 
                 wandb_log(
@@ -280,7 +299,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 model.train()
 
             if step % train.checkpoint_every == 0 and is_main_process:
-                
                 # Evaluation
                 batch = next(train_dl_iter)
                 batch = to_device(batch, "cuda")
@@ -289,7 +307,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
                 for i, audio in enumerate(batch["audio"]):
                     # For now we stop the model generating too far
-                    labels = model.generate(audio, max_steps=len(batch["truth"][i])*3)
+                    labels = model.generate(audio, max_steps=len(batch["truth"][i]) * 3)
                     truth = batch["truth"][i]
                     labels_annotation = format.labels_to_annotation(labels)
                     truth_annotation = format.labels_to_annotation(truth)
@@ -304,7 +322,9 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                     for i in range(len(truth)):
                         truth_start, truth_end, _ = truth[i]
                         labels_start, labels_end, _ = labels[i]
-                        distance = abs(truth_start - labels_start) + abs(truth_end - labels_end)
+                        distance = abs(truth_start - labels_start) + abs(
+                            truth_end - labels_end
+                        )
                         distances.append(distance)
 
                     # Print the distances
@@ -313,11 +333,13 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 der = B
                 distance_mean /= B
 
-                wandb_log({
-                    "eval/DER": der,
-                    "step": step,
-                    "eval/distance_mean": distance_mean,
-                })
+                wandb_log(
+                    {
+                        "eval/DER": der,
+                        "step": step,
+                        "eval/distance_mean": distance_mean,
+                    }
+                )
 
                 checkpoint = {
                     "config": config.model_dump(),

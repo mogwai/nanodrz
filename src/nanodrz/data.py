@@ -73,10 +73,49 @@ def collate_fn(model: DiarizeGPT) -> callable:
 
     return _collate
 
+# Datasets to download:
+
+def libritts_test() -> list[Speaker]:
+    folder = download.dl_libritts_test()
+    return gather_speakers_from_folder(
+        folder,
+        lambda x: os.path.basename(x).split("_")[0],
+    )
+
+
+def libritts_dev() -> list[Speaker]:
+    folder = download.dl_libritts_dev()
+    return gather_speakers_from_folder(
+        folder,
+        lambda x: os.path.basename(x).split("_")[0],
+    )
+
+
+def librilight_small() -> list[Speaker]:
+    folder = download.dl_libri_light_small()
+    return gather_speakers_from_folder(
+        folder,
+        lambda x: os.path.basename(x).split("/")[-3],
+    )
+
+
+def librilight_medium() -> list[Speaker]:
+    folder = download.dl_libri_light_medium()
+    return gather_speakers_from_folder(
+        folder,
+        lambda x: os.path.basename(x).split("/")[-3],
+    )
+
+def librilight_large() -> list[Speaker]:
+    folder = download.dl_libri_light_large()
+    return gather_speakers_from_folder(
+        folder,
+        lambda x: os.path.basename(x).split("/")[-3],
+    )
 
 def artificial_drz_generator(
-    speakers: list[Speaker],
     model: torch.nn.Module,
+    speakers: list[Speaker] = libritts_test(),
     sr=16000,
     max_secs=30,
     **kwargs,
@@ -98,7 +137,7 @@ def artificial_drz_generator(
 
 
 def artificial_diarisation_sample(
-    speakers: list[Speaker],
+    speakers: list[Speaker] = libritts_test(),
     max_secs=30,
     min_secs=7.5,
     interrupt_max=0.2,
@@ -219,41 +258,3 @@ def gather_speakers_from_folder(
 def min_duration(min_secs: int = 0.1) -> callable:
     return lambda utt: utt.seconds > min_secs
 
-
-def libritts_test() -> list[Speaker]:
-    folder = download.dl_libritts_test()
-    return gather_speakers_from_folder(
-        folder,
-        lambda x: os.path.basename(x).split("_")[0],
-    )
-
-
-def libritts_dev() -> list[Speaker]:
-    folder = download.dl_libritts_dev()
-    return gather_speakers_from_folder(
-        folder,
-        lambda x: os.path.basename(x).split("_")[0],
-    )
-
-
-def librilight_small() -> list[Speaker]:
-    folder = download.dl_libri_light_small()
-    return gather_speakers_from_folder(
-        folder,
-        lambda x: os.path.basename(x).split("/")[-3],
-    )
-
-
-def librilight_medium() -> list[Speaker]:
-    folder = download.dl_libri_light_medium()
-    return gather_speakers_from_folder(
-        folder,
-        lambda x: os.path.basename(x).split("/")[-3],
-    )
-
-def librilight_large() -> list[Speaker]:
-    folder = download.dl_libri_light_large()
-    return gather_speakers_from_folder(
-        folder,
-        lambda x: os.path.basename(x).split("/")[-3],
-    )
