@@ -10,6 +10,7 @@ import subprocess
 import os
 import subprocess
 import subprocess
+import os
 
 
 def dl_scp_file(link: str):
@@ -88,7 +89,11 @@ def dl_libritts_test():
 
     if not path.exists(extract_folder):
         makedirs(extract_folder, exist_ok=True)
-        tar = tarfile.open(file_path, mode="r:gz")
+        mode = "r"
+        if "gz" in file_path:
+            mode += ":gz"
+        
+        tar = tarfile.open(file_path, mode=mode)
         tar.extractall(extract_folder)
         tar.close()
 
@@ -112,3 +117,88 @@ def dl_libritts_dev():
         tar.close()
 
     return path.join(extract_folder, "LibriTTS")
+
+
+def dl_libri_light_small():
+    """
+    https://github.com/facebookresearch/libri-light/blob/main/data_preparation/README.md
+    
+    https://dl.fbaipublicfiles.com/librilight/data/small.tar
+    """
+
+    link = "https://dl.fbaipublicfiles.com/librilight/data/small.tar"
+
+    file_path = dl_http_file(link)
+    extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
+
+    if not path.exists(extract_folder):
+        makedirs(extract_folder, exist_ok=True)
+        mode = "r"
+        if "gz" in file_path:
+            mode += ":gz"
+        
+        tar = tarfile.open(file_path, mode=mode)
+        tar.extractall(extract_folder)
+        tar.close()
+
+    return path.join(extract_folder, "small")
+
+def dl_libri_light_medium():
+    """
+    https://github.com/facebookresearch/libri-light/blob/main/data_preparation/README.md
+    
+    https://dl.fbaipublicfiles.com/librilight/data/medium.tar
+    """
+
+    link = "https://dl.fbaipublicfiles.com/librilight/data/medium.tar"
+
+    file_path = dl_http_file(link)
+    extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
+
+    if not path.exists(extract_folder):
+        makedirs(extract_folder, exist_ok=True)
+        mode = "r"
+        if "gz" in file_path:
+            mode += ":gz"
+        
+        tar = tarfile.open(file_path, mode=mode)
+        tar.extractall(extract_folder)
+        tar.close()
+
+    return path.join(extract_folder, "medium")
+
+
+def dl_libri_light_large():
+    """
+    https://github.com/facebookresearch/libri-light/blob/main/data_preparation/README.md
+    
+    https://dl.fbaipublicfiles.com/librilight/data/large.tar
+    """
+
+    link = "https://dl.fbaipublicfiles.com/librilight/data/large.tar"
+
+    file_path = dl_http_file(link)
+    extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
+
+    if not path.exists(extract_folder):
+        makedirs(extract_folder, exist_ok=True)
+        mode = "r"
+        if "gz" in file_path:
+            mode += ":gz"
+        
+        tar = tarfile.open(file_path, mode=mode)
+        tar.extractall(extract_folder)
+        tar.close()
+
+    return path.join(extract_folder, "large")
+
+
+
+if __name__ == "__main__":
+    directory = dl_libri_light_small()
+    files = os.listdir(directory)
+
+    for file in files:
+        print(file)
+    pass
+    

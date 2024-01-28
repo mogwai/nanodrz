@@ -48,15 +48,15 @@ def collate_fn(model: DiarizeGPT) -> callable:
         labels = [b[1] for b in batch]
 
         Q = model.config.data.max_secs / model.num_time_tokens
-        
+
         truth = [[l.copy() for l in b] for b in labels]
 
-        for b in labels:    
+        for b in labels:
             for l in b:
                 l[1] = round(l[1] / Q) + 2
                 l[0] = round(l[0] / Q) + 2
                 l[2] = model.num_embs - 1 - (ord(l[2]) - ord("A"))
-        
+
         audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True)
         audios = audios.permute(0, 2, 1)
         labels = [torch.tensor(l).flatten().long() for l in labels]
@@ -88,7 +88,7 @@ def artificial_drz_generator(
             max_secs=max_secs,
             **kwargs,
         )
-        
+
         audio = model.dac.preprocess(audio2, sr)
 
         if audio.shape[-1] / sr > max_secs:
@@ -121,7 +121,7 @@ def artificial_diarisation_sample(
 
         if speaker.name == last_speaker:
             continue
-        
+
         last_speaker = speaker.name
 
         # Pick a random sample
@@ -129,7 +129,7 @@ def artificial_diarisation_sample(
         random_sample, ssr = torchaudio.load(random_sample_file)
         random_sample = resample(ssr, sr, random_sample)
         random_sample = random.choice(find_nonsilence_chunks(random_sample, sr)[0])
-    
+
         if (audio.shape[-1] + random_sample.shape[-1]) / sr > seconds:
             break
 
@@ -138,7 +138,7 @@ def artificial_diarisation_sample(
         int_range = min(
             interrupt_max, audio.shape[-1] / sr, random_sample.shape[-1] / sr
         )
-        
+
         cut_point = int(random.uniform(-int_range, silence_max) * sr)
         start_label = audio.shape[-1] / sr + cut_point / sr
 
@@ -156,8 +156,10 @@ def artificial_diarisation_sample(
 
         if start_label > 60:
             breakpoint()
-        
-        labels.append([start_label, start_label + random_sample.shape[-1] / sr, name_label])
+
+        labels.append(
+            [start_label, start_label + random_sample.shape[-1] / sr, name_label]
+        )
 
     return audio, labels
 
@@ -208,8 +210,7 @@ def gather_speakers_from_folder(
             speaker.name = speaker_name
             speakers.append(speaker)
             speaker.utts = []
-        
-        
+
         speaker.utts.append(utt)
 
     return speakers
@@ -232,4 +233,27 @@ def libritts_dev() -> list[Speaker]:
     return gather_speakers_from_folder(
         folder,
         lambda x: os.path.basename(x).split("_")[0],
+    )
+
+
+def librilight_small() -> list[Speaker]:
+    folder = download.dl_libri_light_small()
+    return gather_speakers_from_folder(
+        folder,
+        lambda x: os.path.basename(x).split("/")[-3],
+    )
+
+
+def librilight_medium() -> list[Speaker]:
+    folder = download.dl_libri_light_medium()
+    return gather_speakers_from_folder(
+        folder,
+        lambda x: os.path.basename(x).split("/")[-3],
+    )
+
+def librilight_large() -> list[Speaker]:
+    folder = download.dl_libri_light_large()
+    return gather_speakers_from_folder(
+        folder,
+        lambda x: os.path.basename(x).split("/")[-3],
     )
