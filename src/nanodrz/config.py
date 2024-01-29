@@ -34,7 +34,16 @@ class DataConfig(BaseModel):
     # Mel Config
     n_mels: int = 120
     hop_length: int = 256
-    
+
+    synth_datasets: list[str] = [
+        "libritts_test"
+    ]
+
+class FlashConfig(BaseModel):
+    enable_flash: bool = False
+    enable_math: bool = True
+    enable_mem_efficient: bool = True
+
 class TrainConfig(BaseModel):
     total_steps: int = 1_000_000
 
@@ -42,6 +51,7 @@ class TrainConfig(BaseModel):
     batch_size: int = None
     # How many steps to do the forward before computing backward
     grad_acc_steps: int = 21
+    flash: FlashConfig = FlashConfig()
 
     # AdamW
     min_lr: float = 1e-5

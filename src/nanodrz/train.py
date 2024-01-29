@@ -51,7 +51,9 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         )
 
     # Get Speakers
-    speakers = data.libritts_test() + data.libritts_dev()
+    speakers = []
+    for ds in datacfg.synth_datasets:
+        speakers += getattr(data, ds)()
 
     print(
         f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
@@ -61,7 +63,11 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     device_type = "cuda"
 
-    dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
+    dtype = (
+        torch.bfloat16
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        else torch.float16
+    )
 
     torch.cuda.set_device(rank)
     device = torch.cuda.current_device()
@@ -110,8 +116,8 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         del checkpoint
         torch.cuda.empty_cache()
 
-    if not dev:
-        model = torch.compile(model)
+    # if not dev:
+    #     model = torch.compile(model)
     if is_main_process and train.wandb_watch:
         wandb.watch(model, log="all", log_freq=train.watch_every)
 
@@ -177,7 +183,11 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
             for micro_step in range(gradient_accumulation_steps):
                 hours_seen += (
-                    batch["audio_lengths"].sum() / config.model.sample_rate / 60 / 60 / 60
+                    batch["audio_lengths"].sum()
+                    / config.model.sample_rate
+                    / 60
+                    / 60
+                    / 60
                 )
                 model.require_backward_grad_sync = (
                     micro_step == gradient_accumulation_steps - 1
@@ -185,7 +195,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
                 with torch.amp.autocast(
                     enabled=True, device_type=device_type, dtype=dtype
-                ):
+                ), torch.backends.cuda.sdp_kernel(**train.flash.model_dump()):
                     del batch["truth"]
                     loss = model(**batch)
                     loss = loss / gradient_accumulation_steps
@@ -218,7 +228,8 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 loss = loss.item()
                 losses.append(loss)
                 loss_slope = optim.calculate_smoothed_slope(
-                    losses, regression_win=train.regression_win,
+                    losses,
+                    regression_win=train.regression_win,
                     smoothing_constant=train.regression_smoothing,
                 )
                 if loss_slope > 0:
