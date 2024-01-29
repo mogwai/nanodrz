@@ -15,7 +15,7 @@ from nanodrz import data, utils
 from nanodrz.config import Config, load_config
 from nanodrz.data import GeneratorIterableDataset, collate_fn
 from nanodrz.model import DiarizeGPT as Model
-from nanodrz import optim
+from nanodrz import optim, download
 from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
 from pyannote.metrics.diarization import DiarizationErrorRate
 from nanodrz import format_conversions as format
@@ -53,15 +53,15 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     # Get Speakers
     speakers = data.libritts_test() + data.libritts_dev()
 
-    print(
-        f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
-    )
-
     seed_all(config.seed)
 
     device_type = "cuda"
 
-    dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
+    dtype = (
+        torch.bfloat16
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        else torch.float16
+    )
 
     torch.cuda.set_device(rank)
     device = torch.cuda.current_device()
@@ -76,46 +76,20 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
             **datacfg.model_dump(),
         )
     )
-
-    # Determine the batch size possible
-
-    collate = collate_fn(model)
-
-    device_properties = torch.cuda.get_device_properties(device)
-    total_memory = device_properties.total_memory
-
-    # if B is None:
-    #     for B in range(datacfg.batch_size):
-    #         try:
-    #             out = model(
-    #                 torch.rand(B, 1, datacfg.max_secs),
-    #             )
-    #             collate(torch.rand(1, datacfg.max_secs), labe)
-    #         except torch.cuda.OutOfMemoryError:
-    #             model
-
-    train_dl = DataLoader(
-        ds,
-        batch_size=B,
-        collate_fn=collate_fn(model),
-        num_workers=datacfg.num_workers,
-        pin_memory=True,
-        persistent_workers=datacfg.num_workers > 0,
-    )
-
-    # We're not doing val yet
-    val_dl = train_dl
-
     betas = tuple(train.betas)
     optimizer = model.configure_optimizers(
         weight_decay=train.weight_decay, lr=train.min_lr, betas=betas
     )
+
 
     step = 0
     hours_seen = 0.0
 
     if train.checkpoint is not None:
         checkpoint_path = train.checkpoint
+        if ":" in checkpoint_path:
+            checkpoint_path = download.dl_scp_file(checkpoint_path)
+            
         checkpoint = torch.load(checkpoint_path, map_location=f"cuda:{rank}")
         utils.load_what_you_can(checkpoint["model"], model)
 
@@ -127,8 +101,65 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         del checkpoint
         torch.cuda.empty_cache()
 
+    # Compile
     if not dev:
         model = torch.compile(model)
+
+    if 1 or train.do_find_batch:
+        while True:
+            try:
+                _B = B + 1
+                print("Try B =", _B)
+                audio_len = int(datacfg.max_secs * 16000)
+                batch = {
+                    "audio": torch.rand(_B, 1, audio_len),
+                    "audio_lengths": torch.tensor(_B * [audio_len]).long(),
+                }
+                if config.model.audio_encode == "mel":
+                    batch["audio"] = torch.rand(
+                        _B, datacfg.n_mels, int(datacfg.max_secs * 16000 / 256)
+                    )
+                    batch["audio_lengths"] = batch["audio_lengths"] // 256
+
+                batch["labels"] = torch.ones(_B, datacfg.max_labels).long()
+                batch["label_lengths"] = torch.tensor(_B * [datacfg.max_labels]).long()
+                batch = to_device(batch, device)
+
+                for micro_step in range(train.grad_acc_steps):
+                    model.require_backward_grad_sync = (
+                        micro_step == train.grad_acc_steps - 1
+                    )
+                    with torch.amp.autocast(
+                        enabled=True, device_type=device_type, dtype=dtype
+                    ):
+                        out = model(**batch)
+                    out.backward()
+                
+                optimizer.step()
+                optimizer.zero_grad()
+                B = _B
+            except torch.cuda.OutOfMemoryError:
+                print("Found B = ", B)
+                del batch
+                torch.cuda.empty_cache()
+                break
+
+    print(
+        f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
+    )
+    
+    train_dl = DataLoader(
+        ds,
+        batch_size=B,
+        collate_fn=collate_fn(model),
+        num_workers=datacfg.num_workers,
+        pin_memory=True,
+        persistent_workers=datacfg.num_workers > 0,
+    )
+    
+    # We're not doing val yet
+    val_dl = train_dl
+
     if is_main_process and train.wandb_watch:
         wandb.watch(model, log="all", log_freq=train.watch_every)
 
@@ -139,7 +170,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         print(f"{count_parameters(model) / 1_000_000:.2f}M parameters")
 
     max_lr = train.max_lr or 10.0 * train.min_lr
-    gradient_accumulation_steps = train.grad_acc_steps
 
     train_dl_iter = iter(train_dl)
 
@@ -176,7 +206,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     loss = 0.0
     losses = []
-    recovery_attempts = 0
     running = True
 
     if is_main_process:
@@ -192,20 +221,25 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
             for param_group in optimizer.param_groups:
                 param_group["lr"] = lr
 
-            for micro_step in range(gradient_accumulation_steps):
+            for micro_step in range(train.grad_acc_steps):
                 hours_seen += (
-                    batch["audio_lengths"].sum() / config.model.sample_rate / 60 / 60 / 60
+                    batch["audio_lengths"].sum()
+                    / config.model.sample_rate
+                    / 60
+                    / 60
+                    / 60
                 )
                 model.require_backward_grad_sync = (
-                    micro_step == gradient_accumulation_steps - 1
+                    micro_step == train.grad_acc_steps - 1
                 )
 
                 with torch.amp.autocast(
                     enabled=True, device_type=device_type, dtype=dtype
                 ):
+                    print("step")
                     del batch["truth"]
                     loss = model(**batch)
-                    loss = loss / gradient_accumulation_steps
+                    loss = loss / train.grad_acc_steps
 
                 if torch.isnan(loss):
                     wandb.alert("Nan Detection", "Stopping!")
@@ -235,14 +269,15 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 loss = loss.item()
                 losses.append(loss)
                 loss_slope = optim.calculate_smoothed_slope(
-                    losses, regression_win=train.regression_win,
+                    losses,
+                    regression_win=train.regression_win,
                     smoothing_constant=train.regression_smoothing,
                 )
                 if loss_slope > 0:
                     wandb.alert("Explosion Warning", "Check loss graph")
 
                 metrics = {
-                    "train/loss": gradient_accumulation_steps * loss,
+                    "train/loss": train.grad_acc_steps * loss,
                     "train/grad_norm": grad_norm.item(),
                     "train/lr": lr,
                     "train/batch_duration": t2 - t1,
@@ -324,8 +359,8 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                     # Print the distances
                     distance_mean += sum(distances) / len(distances)
 
-                der = B
-                distance_mean /= B
+                der = _B
+                distance_mean /= _B
 
                 wandb_log(
                     {
@@ -382,7 +417,7 @@ def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
     if dev:
         print("Running in dev mode (smaller dataset, batch size, fewer epochs, etc.)")
         config.train.val_every = 3
-        config.train.batch_size = 2
+        # config.train.batch_size = 2
         config.train.total_steps = 2
         config.train.checkpoint_every = 2
         config.train.grad_acc_steps = 1

@@ -26,6 +26,7 @@ class ModelConfig(BaseModel):
 class DataConfig(BaseModel):
     num_workers: int = 8
     max_secs: float = 30.0
+    max_labels: int = 30
     min_secs: float = 10.0
     interrupt_max: float = 0.1
     silence_max: float = 1
@@ -38,10 +39,12 @@ class DataConfig(BaseModel):
 class TrainConfig(BaseModel):
     total_steps: int = 1_000_000
 
-    # If this is set to none, then the batch size will be determine automatically
-    batch_size: int = None
+    batch_size: int = 12
     # How many steps to do the forward before computing backward
     grad_acc_steps: int = 21
+    
+    # Batch Finder
+    do_find_batch: bool = False
 
     # AdamW
     min_lr: float = 1e-5
@@ -71,6 +74,7 @@ class TrainConfig(BaseModel):
 
     regression_win: int = 200
     regression_smoothing: float = 0.95
+
 
     @property
     def is_resuming(self) -> bool:

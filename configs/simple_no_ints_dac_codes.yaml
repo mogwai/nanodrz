@@ -3,7 +3,7 @@ train:
   continue_from_checkpoint: false
   total_steps: 30_000
   max_lr: 1e-4
-  batch_size: 4
+  batch_size: 1
 
 model:
   num_embs: 352
