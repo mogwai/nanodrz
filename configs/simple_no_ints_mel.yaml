@@ -3,15 +3,19 @@ train:
   continue_from_checkpoint: false
   total_steps: 30_000
   max_lr: 1e-4
-  batch_size: 4
+  batch_size: 16
+  grad_acc_steps: 12
 
 model:
   num_embs: 352
-  dmodel: 1536
-  layers: 12
+  dmodel: 1024
+  layers: 8
   audio_encode: mel
 
 data:
   silence_max: 1
   interrupt_max: 0
   num_speakers: 3
+  synth_datatsets:
+    - libritts_dev
+    - libritts_test

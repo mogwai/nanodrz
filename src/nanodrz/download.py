@@ -7,6 +7,7 @@ from tqdm import tqdm
 import os
 import subprocess
 from urllib import request
+import zipfile
 
 
 def dl_scp_file(link: str):
@@ -56,7 +57,7 @@ def dl_http_file(link: str):
     if not os.path.exists(file_path):
         with request.urlopen(link) as response, open(file_path, "wb") as file:
             total_size = int(response.headers.get("content-length", 0))
-            block_size = 1024 * 1024 * 5 # 5MB
+            block_size = 1024 * 1024
             progress_bar = tqdm(
                 total=total_size,
                 desc=link,
@@ -66,6 +67,7 @@ def dl_http_file(link: str):
             )
 
             while True:
+                print(data)
                 data = response.read(block_size)
                 if not data:
                     break
@@ -194,10 +196,33 @@ def dl_libri_light_large():
     return path.join(extract_folder, "large")
 
 
+def dl_voxconverse_dev():
+    link = "http://mm.kaist.ac.kr/datasets/voxconverse/data/voxconverse_dev_wav.zip"
+
+    file_path = dl_http_file(link)
+    print(file_path)
+    if not path.exists(file_path):
+        pass
+
+    extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
+    print(extract_folder)
+    if not path.exists(extract_folder):
+        makedirs(extract_folder, exist_ok=True)
+
+        with zipfile.ZipFile(file_path, "r") as zip_ref:
+            zip_ref.extractall(extract_folder)
+
+    files = os.listdir(extract_folder)
+
+    for file in files:
+        print(file)
+    
+    # return path.join(extract_folder, )
+
+
 if __name__ == "__main__":
-    directory = dl_libri_light_small()
+    directory = dl_voxconverse_dev()
     files = os.listdir(directory)
 
     for file in files:
         print(file)
-    pass
