@@ -77,23 +77,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         )
     )
 
-    # Determine the batch size possible
-
-    collate = collate_fn(model)
-
-    device_properties = torch.cuda.get_device_properties(device)
-    total_memory = device_properties.total_memory
-
-    # if B is None:
-    #     for B in range(datacfg.batch_size):
-    #         try:
-    #             out = model(
-    #                 torch.rand(B, 1, datacfg.max_secs),
-    #             )
-    #             collate(torch.rand(1, datacfg.max_secs), labe)
-    #         except torch.cuda.OutOfMemoryError:
-    #             model
-
     train_dl = DataLoader(
         ds,
         batch_size=B,
