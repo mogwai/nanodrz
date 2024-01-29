@@ -1,5 +1,5 @@
 train:
-  checkpoint: /home/harry/storj/runs/nanodrz/1706300953/0006000.pt
+  checkpoint: gpudev:/home/harry/.cache/nanodrz/runs/nanodrz/nanodrz/1705840799/0037000.pt
   continue_from_checkpoint: false
   total_steps: 30_000
   max_lr: 1e-4
@@ -12,6 +12,7 @@ model:
   audio_encode: mel
 
 data:
+  num_workers: 0
   silence_max: 1
   interrupt_max: 0
   num_speakers: 3

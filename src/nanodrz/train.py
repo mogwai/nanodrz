@@ -67,8 +67,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     device = torch.cuda.current_device()
 
     model = Model(config).cuda(rank)
-    if not dev:
-        model = torch.compile(model)
 
     ds = GeneratorIterableDataset(
         data.artificial_drz_generator(
@@ -129,6 +127,8 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         del checkpoint
         torch.cuda.empty_cache()
 
+    if not dev:
+        model = torch.compile(model)
     if is_main_process and train.wandb_watch:
         wandb.watch(model, log="all", log_freq=train.watch_every)
 
@@ -240,7 +240,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 )
                 if loss_slope > 0:
                     wandb.alert("Explosion Warning", "Check loss graph")
-                
+
                 metrics = {
                     "train/loss": gradient_accumulation_steps * loss,
                     "train/grad_norm": grad_norm.item(),
