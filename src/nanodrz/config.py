@@ -32,7 +32,7 @@ class DataConfig(BaseModel):
     num_speakers: int = 8
 
     # Mel Config
-    n_mels: int = 120
+    n_mels: int = 80
     hop_length: int = 256
 
     synth_datasets: list[str] = [
