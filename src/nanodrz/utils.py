@@ -247,8 +247,6 @@ def visualise_annotation(labels: list):
 
     annotation = labels_to_annotation(labels)
     display(annotation)
-    return annotation
-
 
 RESAMPLERS = {}
 
