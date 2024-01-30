@@ -1,21 +1,15 @@
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import IterableDataset, DataLoader
 from itertools import chain
+from nanodrz import data
+from nanodrz.data import GeneratorIterableDataset
+from nanodrz.model import DiarizeGPT
 
-# Define your generator function
-def generator():
-    for i in range(10):
-        yield i
 
-# Create a generator dataloader
-generator_dataloader = DataLoader(generator(), batch_size=2)
+# model = DiarizeGPT()
 
-# Create a normal dataloader
-normal_dataloader = DataLoader([10, 20, 30, 40, 50], batch_size=2)
+# ds = GeneratorIterableDataset(data.artificial_drz_generator(model))
 
-# Combine the two dataloaders
-combined_dataloader = chain(generator_dataloader, normal_dataloader)
-
-# Iterate over the combined dataloader
-for batch in combined_dataloader:
-    print(batch)
+ds2 = data.voxconverse_dev()
+for i in range(len(ds2)):
+    x = ds2[i]

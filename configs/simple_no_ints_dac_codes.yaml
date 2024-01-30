@@ -1,5 +1,5 @@
 train:
-  checkpoint: gpudev:/home/harry/.cache/nanodrz/runs/nanodrz/nanodrz/1705840799/0037000.pt
+  # checkpoint: /home/harry/.cache/nanodrz/runs/nanodrz/nanodrz/1705840799/0037000.pt
   continue_from_checkpoint: false
   total_steps: 30_000
   max_lr: 1e-4

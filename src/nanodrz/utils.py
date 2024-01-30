@@ -365,7 +365,7 @@ def load_what_you_can(checkpoint: dict, model: nn.Module):
     """
     This method takes a checkpoint and loads as many weights from it as possible:
 
-    If they are the same shape, it just loads normally
+    If they are the same shape, there's nothing to do 
 
     Will load the smallest shape otherwise.
     """
@@ -384,10 +384,11 @@ def load_what_you_can(checkpoint: dict, model: nn.Module):
         if pshape == mshape:
             model_state.copy_(param)
             continue
-
+        
         min_shape = [
             min(param.shape[i], model_state.shape[i]) for i in range(len(param.shape))
         ]
+        print(name, "model:", mshape, "chkpt:", pshape, "loading:", min_shape)
         idxs = torch.meshgrid(*[torch.arange(s) for s in min_shape])
         model_state[tuple(idxs)].copy_(param[tuple(idxs)])
 

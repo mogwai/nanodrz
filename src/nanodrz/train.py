@@ -11,7 +11,7 @@ from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 
 import wandb
-from nanodrz import data, utils
+from nanodrz import data, utils, download
 from nanodrz.config import Config, load_config
 from nanodrz.data import GeneratorIterableDataset, collate_fn
 from nanodrz.model import DiarizeGPT as Model
@@ -105,13 +105,15 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     if train.checkpoint is not None:
         checkpoint_path = train.checkpoint
+        if ":" in checkpoint_path:
+            checkpoint_path = download.dl_scp_file(checkpoint_path)
         checkpoint = torch.load(checkpoint_path, map_location=f"cuda:{rank}")
         utils.load_what_you_can(checkpoint["model"], model)
-
+        hours_seen = checkpoint["step"]
+        
         if train.continue_from_checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer"])
             step = checkpoint["step"]
-            hours_seen = checkpoint["step"]
 
         del checkpoint
         torch.cuda.empty_cache()
@@ -165,7 +167,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     loss = 0.0
     losses = []
-    recovery_attempts = 0
     running = True
 
     if is_main_process:
@@ -232,7 +233,8 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                     regression_win=train.regression_win,
                     smoothing_constant=train.regression_smoothing,
                 )
-                if loss_slope > 0:
+
+                if loss_slope > 1e-3 and steps > 400:
                     wandb.alert("Explosion Warning", "Check loss graph")
 
                 metrics = {
@@ -324,9 +326,9 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 wandb_log(
                     {
                         "eval/DER": der,
-                        "step": step,
                         "eval/distance_mean": distance_mean,
-                    }
+                    },
+                    step=step,
                 )
 
                 checkpoint = {
