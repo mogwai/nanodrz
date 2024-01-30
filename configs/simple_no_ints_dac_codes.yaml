@@ -3,14 +3,14 @@ train:
   continue_from_checkpoint: false
   total_steps: 30_000
   max_lr: 1e-4
-  batch_size: 4
+  batch_size: 10
 
 model:
   num_embs: 352
   dmodel: 1536
   layers: 12
-  audio_encode: mel
-
+  audio_encode: dac-codes 
+  
 data:
   num_workers: 0
   silence_max: 1

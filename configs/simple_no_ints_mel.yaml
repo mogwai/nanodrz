@@ -7,8 +7,8 @@ train:
 
 model:
   num_embs: 352
-  dmodel: 1536
-  layers: 12
+  dmodel: 1024
+  layers: 8
   audio_encode: mel
 
 data:
