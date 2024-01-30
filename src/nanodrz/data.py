@@ -140,7 +140,7 @@ def collate_fn(model: DiarizeGPT) -> callable:
 def gather_speakers_from_folder(
     folder: str,
     retrieve_speaker: callable,
-    exts: list[str] = ["wav", "opus", "mp3"],
+    exts: list[str] = ["wav", "opus", "mp3", "flac"],
     file_filters: list[callable] = [],
 ):
     """
@@ -158,6 +158,7 @@ def gather_speakers_from_folder(
 
     for file in wav_files:
         # Extract the speaker name from the file path
+        print(file)
         speaker_name = retrieve_speaker(file)
         utt = Utterance()
         utt.file_url = file
@@ -207,9 +208,10 @@ def libritts_dev() -> list[Speaker]:
 
 def librilight_small() -> list[Speaker]:
     folder = download.dl_libri_light_small()
+    print(folder)
     return gather_speakers_from_folder(
         folder,
-        lambda x: os.path.basename(x).split("/")[-3],
+        lambda x: x.split("/")[-3],
     )
 
 
@@ -217,7 +219,7 @@ def librilight_medium() -> list[Speaker]:
     folder = download.dl_libri_light_medium()
     return gather_speakers_from_folder(
         folder,
-        lambda x: os.path.basename(x).split("/")[-3],
+        lambda x: x.split("/")[-3],
     )
 
 
@@ -225,7 +227,7 @@ def librilight_large() -> list[Speaker]:
     folder = download.dl_libri_light_large()
     return gather_speakers_from_folder(
         folder,
-        lambda x: os.path.basename(x).split("/")[-3],
+        lambda x: x.split("/")[-3],
     )
 
 
@@ -344,3 +346,7 @@ def artificial_diarisation_sample(
 
 def min_duration(min_secs: int = 0.1) -> callable:
     return lambda utt: utt.seconds > min_secs
+
+
+if __name__ == "__main__":
+    print(librilight_small())

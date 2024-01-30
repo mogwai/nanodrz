@@ -210,24 +210,26 @@ def dl_voxconverse_dev():
         with zipfile.ZipFile(file_path, "r") as zip_ref:
             zip_ref.extractall(extract_folder)
 
-    extract_folder = path.join(extract_folder, "audio")
-    files = os.listdir(extract_folder)
+        extract_folder = path.join(extract_folder, "audio")
 
-    for i in files:
-        i = i.replace(".wav", ".rttm")
-        link = f"https://raw.githubusercontent.com/joonson/voxconverse/master/dev/{i}"
-        file = dl_http_file(link)
-        # Check if file is empty before copying
-        with open(file) as f:
-            rttm = f.read()
+        files = os.listdir(extract_folder)
 
-        if rttm.strip() != "":
-            shutil.copy(file, extract_folder)
+        for i in files:
+            i = i.replace(".wav", ".rttm")
+            link = f"https://raw.githubusercontent.com/joonson/voxconverse/master/dev/{i}"
+            file = dl_http_file(link)
+            # Check if file is empty before copying
+            with open(file) as f:
+                rttm = f.read()
+
+            if rttm.strip() != "":
+                shutil.copy(file, extract_folder)
+                os.remove(file)
 
     return path.join(extract_folder)
 
 
 if __name__ == "__main__":
-    directory = dl_voxconverse_dev()
+    directory = dl_libri_light_small()
     files = os.listdir(directory)
-
+    print(files)
