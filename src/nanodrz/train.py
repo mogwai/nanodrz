@@ -375,7 +375,7 @@ def _click_main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
     main(config, edit, dev, profile, watch)
 
 
-def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool, name: str):
+def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool, name: str=""):
     if config is None:
         config = Config()
 
