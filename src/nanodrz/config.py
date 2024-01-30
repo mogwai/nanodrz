@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from .constants import RUN_DIR
 from .utils import get_git_commit, get_git_branch
 from nanodrz import utils
+from nanodrz.download import dl_http_file
 
 
 class ModelConfig(BaseModel):
@@ -107,7 +108,10 @@ def load_config(config: str | Config, edit: bool) -> Config:
         os.getenv("WANDB_API_KEY") is not None
     ), "Please make sure you have set your `WANDB_API_KEY`"
 
+    
     if type(config) is str:
+        if "http:" in config:
+            config = dl_http_file(config)
         with open(config, encoding="utf-8") as f:
             config = Config(**yaml.safe_load(f))
     else:
