@@ -196,7 +196,6 @@ def dl_libri_light_large():
     return path.join(extract_folder, "large")
 
 
-# ...
 
 def dl_voxconverse_dev():
     link = "http://mm.kaist.ac.kr/datasets/voxconverse/data/voxconverse_dev_wav.zip"

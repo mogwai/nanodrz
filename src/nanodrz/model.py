@@ -284,7 +284,7 @@ class DiarizeGPT(Module):
         elif cfg.audio_encode == "mel":
             # Turn into a mel spectrogram
             if audio.shape[1] == 1:
-                audio = self.mel(audio)
+                audio = self.mel(audio[0])
             audio = self.whispconv(audio)
 
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
