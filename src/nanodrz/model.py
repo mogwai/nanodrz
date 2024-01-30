@@ -346,8 +346,8 @@ class DiarizeGPT(Module):
 
         for start, end, label in tokens.split(3):
             # Unquantize the start and end times
-            start = start * self.config.data.max_secs / self.num_time_tokens
-            end = end * self.config.data.max_secs / self.num_time_tokens
+            start = (start-2) * self.config.data.max_secs / self.num_time_tokens
+            end = (end-2) * self.config.data.max_secs / self.num_time_tokens 
             label = chr(ord("A") + (self.num_embs - (label + 1)).item())
             nlabels.append([start.item(), end.item(), label])
 
