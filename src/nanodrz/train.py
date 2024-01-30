@@ -53,7 +53,10 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     # Get Speakers
     speakers = []
     for ds in datacfg.synth_datasets:
+        print(ds)
         speakers += getattr(data, ds)()
+    
+    print(speakers)
 
     print(
         f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
@@ -75,8 +78,8 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     model = Model(config).cuda(rank)
 
     ds = GeneratorIterableDataset(
-        data.artificial_drz_generator(
             model,
+        data.artificial_drz_generator(
             speakers,
             model.config.model.sample_rate,
             **datacfg.model_dump(),

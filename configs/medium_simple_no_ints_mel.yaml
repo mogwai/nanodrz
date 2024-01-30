@@ -18,5 +18,7 @@ data:
   silence_max: 1
   interrupt_max: .5
   num_speakers: 5
-  synth_datatsets:
-    - librilight_medium
+  synth_datasets:
+    - librilight_small
+    - libritts_test
+    - libritts_dev
