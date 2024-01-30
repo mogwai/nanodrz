@@ -53,10 +53,8 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     # Get Speakers
     speakers = []
     for ds in datacfg.synth_datasets:
-        print(ds)
-        speakers += getattr(data, ds)()
-
-    print(speakers)
+        nspeakers= getattr(data, ds)()
+        speakers += nspeakers
 
     print(
         f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
