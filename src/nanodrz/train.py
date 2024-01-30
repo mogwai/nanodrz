@@ -105,8 +105,13 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     if train.checkpoint is not None:
         checkpoint_path = train.checkpoint
+        
+        if "http" in checkpoint_path:
+            checkpoint_path = download.dl_http_file(checkpoint_path)
+        
         if ":" in checkpoint_path:
             checkpoint_path = download.dl_scp_file(checkpoint_path)
+
         checkpoint = torch.load(checkpoint_path, map_location=f"cuda:{rank}")
         utils.load_what_you_can(checkpoint["model"], model)
         hours_seen = checkpoint["step"]
