@@ -39,7 +39,7 @@ class DataConfig(BaseModel):
 
     synth_datasets: list[str] = ["libritts_test"]
 
-    scramble_labels = 
+    # scramble_labels = 
 
 
 class FlashConfig(BaseModel):
