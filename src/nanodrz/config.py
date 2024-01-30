@@ -110,7 +110,7 @@ def load_config(config: str | Config, edit: bool) -> Config:
 
     
     if type(config) is str:
-        if "http:" in config:
+        if "http" in config:
             config = dl_http_file(config)
         with open(config, encoding="utf-8") as f:
             config = Config(**yaml.safe_load(f))
