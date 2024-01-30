@@ -158,7 +158,6 @@ def gather_speakers_from_folder(
 
     for file in wav_files:
         # Extract the speaker name from the file path
-        print(file)
         speaker_name = retrieve_speaker(file)
         utt = Utterance()
         utt.file_url = file
@@ -208,7 +207,7 @@ def libritts_dev() -> list[Speaker]:
 
 def librilight_small() -> list[Speaker]:
     folder = download.dl_libri_light_small()
-    print(folder)
+
     return gather_speakers_from_folder(
         folder,
         lambda x: x.split("/")[-3],
