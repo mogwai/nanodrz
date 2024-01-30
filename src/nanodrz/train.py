@@ -15,7 +15,7 @@ from nanodrz import data, utils, download
 from nanodrz.config import Config, load_config
 from nanodrz.data import GeneratorIterableDataset, collate_fn
 from nanodrz.model import DiarizeGPT as Model
-from nanodrz import optim
+from nanodrz import optim, download
 from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
 from pyannote.metrics.diarization import DiarizationErrorRate
 from nanodrz import format_conversions as format
@@ -110,7 +110,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         checkpoint = torch.load(checkpoint_path, map_location=f"cuda:{rank}")
         utils.load_what_you_can(checkpoint["model"], model)
         hours_seen = checkpoint["step"]
-        
+
         if train.continue_from_checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer"])
             step = checkpoint["step"]
