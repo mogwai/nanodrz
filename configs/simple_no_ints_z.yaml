@@ -1,5 +1,5 @@
 train:
-  checkpoint: /home/harry/runs/nanodrz/nanodrz/1705840799/0037000.pt:x
+  checkpoint: /home/harry/runs/nanodrz/nanodrz/1705840799/0037000.pt
   max_lr: 3e-4
 
 data:

@@ -183,13 +183,18 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 param_group["lr"] = lr
 
             for micro_step in range(gradient_accumulation_steps):
-                hours_seen += (
+                hours = (
                     batch["audio_lengths"].sum()
                     / config.model.sample_rate
                     / 60
                     / 60
                     / 60
                 )
+                if config.model.audio_encode == "mel":
+                    hours *= 256
+                
+                hours_seen += hours
+                
                 model.require_backward_grad_sync = (
                     micro_step == gradient_accumulation_steps - 1
                 )
