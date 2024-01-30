@@ -1,6 +1,6 @@
 train:
-  checkpoint: /home/harry/runs/nanodrz/nanodrz/1705840799/0037000.pt
-  max_lr: 3e-4
+  checkpoint: /home/harry/storj/runs/nanodrz/1706300953/0006000.pt
+  max_lr: 1e-4
 
 data:
   interrupt_sec_mean: 0
