@@ -375,10 +375,10 @@ def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
 
     if dev:
         print("Running in dev mode (smaller dataset, batch size, fewer epochs, etc.)")
-        config.train.val_every = 3
+        config.train.val_every = 1
         config.train.batch_size = 2
         config.train.total_steps = 2
-        config.train.checkpoint_every = 2
+        config.train.checkpoint_every = 1
         config.train.grad_acc_steps = 1
         config.data.num_workers = 0
 
