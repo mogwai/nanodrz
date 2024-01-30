@@ -8,6 +8,7 @@ import os
 import subprocess
 from urllib import request
 import zipfile
+import shutil
 
 
 def dl_scp_file(link: str):
@@ -67,7 +68,6 @@ def dl_http_file(link: str):
             )
 
             while True:
-                print(data)
                 data = response.read(block_size)
                 if not data:
                     break
@@ -196,6 +196,8 @@ def dl_libri_light_large():
     return path.join(extract_folder, "large")
 
 
+# ...
+
 def dl_voxconverse_dev():
     link = "http://mm.kaist.ac.kr/datasets/voxconverse/data/voxconverse_dev_wav.zip"
 
@@ -209,19 +211,24 @@ def dl_voxconverse_dev():
         with zipfile.ZipFile(file_path, "r") as zip_ref:
             zip_ref.extractall(extract_folder)
 
-
     extract_folder = path.join(extract_folder, "audio")
     files = os.listdir(extract_folder)
 
     for i in files:
+        i = i.replace(".wav", ".rttm")
+        link = f"https://raw.githubusercontent.com/joonson/voxconverse/master/dev/{i}"
+        file = dl_http_file(link)
+        # Check if file is empty before copying
+        with open(file) as f:
+            rttm = f.read()
 
-        https://raw.githubusercontent.com/joonson/voxconverse/master/dev/
-    # return path.join(extract_folder, )
+        if rttm.strip() != "":
+            shutil.copy(file, extract_folder)
+
+    return path.join(extract_folder)
 
 
 if __name__ == "__main__":
     directory = dl_voxconverse_dev()
     files = os.listdir(directory)
 
-    for file in files:
-        print(file)

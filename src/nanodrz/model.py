@@ -282,6 +282,9 @@ class DiarizeGPT(Module):
             audio = torch.cat(audio, dim=-1)
             audio = self.whispconv(audio)
 
+        elif cfg.audio_encode == "mel":
+            audio = self.whispconv(audio)
+
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 
         emb = torch.cat((audio, self.start_diarize_emb[None][None]), dim=1)

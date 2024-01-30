@@ -15,7 +15,10 @@ model:
 data:
   silence_max: 1
   interrupt_max: 0
+  # Map the speakers to random labels
+  scramble_labels: false
+
   num_speakers: 3
   synth_datatsets:
     - libritts_dev
-    - libritts_test
+    - libritts_test  

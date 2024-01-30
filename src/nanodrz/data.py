@@ -3,16 +3,20 @@ import itertools
 import os
 import random
 from dataclasses import dataclass
+
+from tqdm import tqdm
 from os.path import expanduser
 
 import torch
 import torchaudio
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import IterableDataset
+from torch.utils.data import IterableDataset, Dataset
+
 
 from nanodrz import download
 from nanodrz.model import DiarizeGPT
 from nanodrz.utils import resample, find_nonsilence_chunks
+from nanodrz import format_conversions as formats
 
 
 @dataclass
@@ -39,6 +43,55 @@ class GeneratorIterableDataset(IterableDataset):
 
     def __iter__(self):
         return iter(self.generator)
+
+
+class DiarizationDataset(Dataset):
+    def __init__(self, folder, sr=16000, max_secs=30, min_seconds=10):
+        self.sr = sr
+        self.rttm_files = glob.glob(os.path.join(folder, "*.rttm"))
+        self.min_secs = min_seconds * sr
+        self.max_secs = max_secs * sr
+
+    # Return the wav and
+    def __getitem__(self, i):
+        i = self.rttm_files[i]
+        wav = i.replace(".rttm", ".wav")
+        wav, sr = torchaudio.load(wav)
+        wav = resample(sr, self.sr, wav)
+
+        with open(i, "r") as file:
+            rttm = file.read()
+
+        labels = formats.convert_rttm(rttm)
+
+        # Make sure we're sorting by
+        labels.sort(key=lambda x: x[0])
+
+        # We need to cut the audio to fit out batch size
+        secs = wav.shape[-1]
+        duration = random.randint(self.min_secs, min(self.max_secs, secs))
+        assert secs > self.min_secs
+
+        start = 0
+        end = 0
+
+        start = random.randint(0, secs - duration)
+        end = start + duration
+        wav = wav[:, start : end]
+
+        labels = list(
+            filter(
+                lambda x: x[0] * 16000 < end or  x[1] * 16000 > start,
+                labels,
+            )
+        )
+
+        # Clip the labels
+        labels = [[max(l[0], start), min(l[1], end), l[2]] for l in labels]
+        return wav, labels
+
+    def __len__(self):
+        return len(self.rttm_files)
 
 
 def collate_fn(model: DiarizeGPT) -> callable:
@@ -176,6 +229,25 @@ def librilight_large() -> list[Speaker]:
     )
 
 
+def voxconverse_dev(
+    sr=16000, max_seconds: int = 30, max_speakers=3
+) -> DiarizationDataset:
+    folder = download.dl_voxconverse_dev()
+    ds = DiarizationDataset(folder, sr, max_seconds)
+    
+    delete = []
+    
+    for i in tqdm(range(len(ds)),desc="Filtering voxconverse", leave=False):
+        labels = set([l[-1] for l in ds[i][1]])
+        if len(labels) > max_speakers:
+            delete.append(i)
+
+    for i in sorted(delete, reverse=True):
+        del ds.rttm_files[i]
+    
+    return ds
+
+
 def artificial_drz_generator(
     model: torch.nn.Module,
     speakers: list[Speaker] = libritts_test(),
@@ -191,6 +263,7 @@ def artificial_drz_generator(
             **kwargs,
         )
 
+        # This can pad to over the max duration
         if hasattr(model, "dac"):
             audio = model.dac.preprocess(audio, sr)
 

@@ -60,7 +60,7 @@ def convert_rttm(input_text:str):
         start_time = float(parts[3])
         duration = float(parts[4])
         speaker_label = parts[7]
-        segments.append([start_time, duration, speaker_label])
+        segments.append([start_time, start_time + duration, speaker_label])
 
     segments = sorted(segments, key=lambda x: x[0])
 
@@ -69,7 +69,7 @@ def convert_rttm(input_text:str):
             speaker_map[seg[-1]] = current_speaker
             current_speaker = chr(ord(current_speaker) + 1)
         seg[-1] = speaker_map[seg[-1]]
-
+    
     return segments
 
 def str_to_labels(labels: str) -> list[str]:
