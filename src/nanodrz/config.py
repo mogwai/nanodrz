@@ -79,7 +79,7 @@ class TrainConfig(BaseModel):
     log_every: int = 1
     watch_every: int = 1000
 
-    regression_win: int = 200
+    regression_win: int = 400
     regression_smoothing: float = 0.95
 
     @property

@@ -200,23 +200,22 @@ def dl_voxconverse_dev():
     link = "http://mm.kaist.ac.kr/datasets/voxconverse/data/voxconverse_dev_wav.zip"
 
     file_path = dl_http_file(link)
-    print(file_path)
-    if not path.exists(file_path):
-        pass
 
     extract_folder = path.join(CACHE_DIR, path.basename(file_path).split(".")[0])
-    print(extract_folder)
+
     if not path.exists(extract_folder):
         makedirs(extract_folder, exist_ok=True)
 
         with zipfile.ZipFile(file_path, "r") as zip_ref:
             zip_ref.extractall(extract_folder)
 
+
+    extract_folder = path.join(extract_folder, "audio")
     files = os.listdir(extract_folder)
 
-    for file in files:
-        print(file)
-    
+    for i in files:
+
+        https://raw.githubusercontent.com/joonson/voxconverse/master/dev/
     # return path.join(extract_folder, )
 
 
