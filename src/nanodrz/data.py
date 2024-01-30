@@ -250,11 +250,13 @@ def voxconverse_dev(
 
 def artificial_drz_generator(
     model: torch.nn.Module,
-    speakers: list[Speaker] = libritts_test(),
+    speakers: list[Speaker] = None,
     sr=16000,
     max_secs=30,
     **kwargs,
 ):
+    if speakers is None:
+        speakers = libritts_test()
     while True:
         audio, label = artificial_diarisation_sample(
             speakers,
@@ -274,7 +276,7 @@ def artificial_drz_generator(
 
 
 def artificial_diarisation_sample(
-    speakers: list[Speaker] = libritts_test(),
+    speakers: list[Speaker] = None,
     max_secs=30,
     min_secs=7.5,
     interrupt_max=0.2,
@@ -283,6 +285,9 @@ def artificial_diarisation_sample(
     sr=16000,
     **kwargs,
 ):
+    if speakers is None:
+        speakers = libritts_test()
+        
     audio = torch.zeros(1, 0)
     names, labels = [], []
 
