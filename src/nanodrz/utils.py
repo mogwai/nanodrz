@@ -272,6 +272,7 @@ def get_file_duration(file: str):
     duration = info.num_frames / info.sample_rate
     return duration
 
+
 def hash_arguments(args, kwargs):
     arguments = list(args) + list(kwargs.keys()) + list(kwargs.values())
     return "".join([sha256(b) for b in arguments])
@@ -365,7 +366,7 @@ def load_what_you_can(checkpoint: dict, model: nn.Module):
     """
     This method takes a checkpoint and loads as many weights from it as possible:
 
-    If they are the same shape, there's nothing to do 
+    If they are the same shape, there's nothing to do
 
     Will load the smallest shape otherwise.
     """
@@ -384,7 +385,7 @@ def load_what_you_can(checkpoint: dict, model: nn.Module):
         if pshape == mshape:
             model_state.copy_(param)
             continue
-        
+
         min_shape = [
             min(param.shape[i], model_state.shape[i]) for i in range(len(param.shape))
         ]
@@ -410,9 +411,7 @@ def mel_spec(
     center = False
 
     if fmax not in mel_basis:
-        mel = librosa_mel_fn(
-            sr=sr, n_fft=n_fft, n_mels=n_mels, fmin=fmin, fmax=fmax
-        )
+        mel = librosa_mel_fn(sr=sr, n_fft=n_fft, n_mels=n_mels, fmin=fmin, fmax=fmax)
         mel_basis[str(fmax) + "_" + str(audio.device)] = (
             torch.from_numpy(mel).float().to(audio.device)
         )
@@ -448,3 +447,64 @@ def mel_spec(
     # Normalise
     # spec = (spec - 2)/-14
     return spec
+
+
+def dictdiff(maindict: dict, changeddict: dict) -> dict:
+    """
+    Returns the difference of two dicts
+    """
+    assert type(maindict) == dict
+    assert type(changeddict) == dict
+    from copy import deepcopy
+
+    changeddict = deepcopy(changeddict)
+
+    for k in maindict.keys():
+        if k not in changeddict:
+            continue
+
+        if type(maindict[k]) == dict:
+            # Recursive dict difference had no changes either
+            dif = dictdiff(maindict[k], changeddict[k])
+            changeddict[k] = dif
+            if dif == {}:
+                del changeddict[k]
+        elif maindict[k] == changeddict[k] or (
+            maindict[k] is None and not changeddict[k]
+        ):
+            del changeddict[k]
+
+    return changeddict
+
+
+def dict_to_strs(d, prefix="") -> str:
+    s = []
+
+    for k, v in d.items():
+        if type(v) is dict:
+            s += dict_to_strs(v, prefix + k + ".")
+        else:
+            s += [f"{prefix + k}={v}"]
+
+    return s if prefix != "" else "|".join(s)
+
+
+millnames = ["", "K", "M"]
+
+
+def shortnumberstring(n: int) -> str:
+    import math
+
+    """Converts long numbers to shorthand:
+    1123 -> 1K
+    123123 -> 123K
+    """
+    n = float(n)
+    millidx = max(
+        0,
+        min(
+            len(millnames) - 1, int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))
+        ),
+    )
+
+    return "{:.0f}{}".format(n / 10 ** (3 * millidx), millnames[millidx])

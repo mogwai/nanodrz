@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from .constants import RUN_DIR
 from .utils import get_git_commit, get_git_branch
+from nanodrz import utils
 
 
 class ModelConfig(BaseModel):
@@ -23,6 +24,7 @@ class ModelConfig(BaseModel):
     use_time_pos: bool = True
     num_embs: int = 512
 
+
 class DataConfig(BaseModel):
     num_workers: int = 8
     max_secs: float = 30.0
@@ -35,14 +37,16 @@ class DataConfig(BaseModel):
     n_mels: int = 80
     hop_length: int = 256
 
-    synth_datasets: list[str] = [
-        "libritts_test"
-    ]
+    synth_datasets: list[str] = ["libritts_test"]
+
+    scramble_labels = 
+
 
 class FlashConfig(BaseModel):
     enable_flash: bool = False
     enable_math: bool = True
     enable_mem_efficient: bool = True
+
 
 class TrainConfig(BaseModel):
     total_steps: int = 1_000_000
@@ -93,7 +97,6 @@ class Config(BaseModel):
     train: TrainConfig = TrainConfig()
     seed: int = 42
 
-    name: str | None = "nanodrz"
     commit: str | None = None
     branch: str | None = None
     run_dir: str | None = None
@@ -112,7 +115,7 @@ def load_config(config: str | Config, edit: bool) -> Config:
         config.branch = get_git_branch()
         config.commit = get_git_commit()
 
-    config.run_dir = os.path.join(RUN_DIR, config.name, str(int(time.time())))
+    config.run_dir = os.path.join(RUN_DIR, str(int(time.time())))
     os.makedirs(config.run_dir, exist_ok=True)
 
     if edit:
@@ -121,3 +124,9 @@ def load_config(config: str | Config, edit: bool) -> Config:
             config = Config(**yaml.safe_load(edited))
 
     return config
+
+
+def diffstr(config: Config, config2: Config) -> str:
+    diff = utils.dictdiff(config.model_dump(), config2.model_dump())
+    result = utils.dict_to_strs(diff)
+    return result

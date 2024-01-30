@@ -192,9 +192,9 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 )
                 if config.model.audio_encode == "mel":
                     hours *= 256
-                
+
                 hours_seen += hours
-                
+
                 model.require_backward_grad_sync = (
                     micro_step == gradient_accumulation_steps - 1
                 )
@@ -325,13 +325,13 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                     # Print the distances
                     distance_mean += sum(distances) / len(distances)
 
-                der = B
+                der /= B
                 distance_mean /= B
 
                 wandb_log(
                     {
                         "eval/DER": der,
-                        "eval/distance_mean": distance_mean,
+                        "eval/diff_secs": distance_mean,
                     },
                     step=step,
                 )
@@ -371,11 +371,16 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     "--watch",
     is_flag=True,
 )
-def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
+def _click_main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
+    main(config, edit, dev, profile, watch)
+
+
+def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool, name: str):
     if config is None:
         config = Config()
 
-    config: Config = load_config(config, edit)
+    if type(config) is str:
+        config: Config = load_config(config, edit)
 
     config.train.torch_profile = config.train.torch_profile or profile
     config.train.wandb_watch = config.train.wandb_watch or watch
@@ -413,4 +418,4 @@ def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
 
 
 if __name__ == "__main__":
-    main()
+    _click_main()

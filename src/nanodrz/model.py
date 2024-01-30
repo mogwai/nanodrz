@@ -74,9 +74,7 @@ class DiarizeGPT(Module):
                 dmodel,
                 datacfg.n_mels,
             )
-            self.mel = partial(
-                mel_spec, n_mels=datacfg.n_mels, sr=modelcfg.sample_rate
-            )
+            self.mel = partial(mel_spec, n_mels=datacfg.n_mels, sr=modelcfg.sample_rate)
             self.init_mod_weights += [self.whispconv]
 
         # Positional Encoding
@@ -183,7 +181,7 @@ class DiarizeGPT(Module):
                 # Dac length reduction
                 audio_lengths = audio_lengths // 320
                 len_coef /= 320
-        
+
             audio = self.whispconv(audio.permute(0, 2, 1))
             # Whisper length reduction
             audio_lengths = audio_lengths // 2
@@ -214,7 +212,7 @@ class DiarizeGPT(Module):
             rearrange(text_embs, "B (b s) L -> B b s L", s=3)[:, :, :2].add_(
                 self.time_pos_emb(time_boundaries)
             )
-            
+
         embs = []
         for b in range(B):
             emb = torch.cat(
@@ -228,13 +226,14 @@ class DiarizeGPT(Module):
             )
             embs.append(emb)
 
-        
         embs = pad_sequence(embs, batch_first=True)
-        
+
         # Fixed size for torch.compile
         # max audio len sequence + max labels + drz_cmd
-        max_seq_len = int(data.max_secs*modelcfg.sample_rate*len_coef) + 30*3 + 1
-        embs = torch.nn.functional.pad(embs, (0, 0, 0, max(0, max_seq_len - embs.size(1)), 0, 0))
+        max_seq_len = int(data.max_secs * modelcfg.sample_rate * len_coef) + 30 * 3 + 1
+        embs = torch.nn.functional.pad(
+            embs, (0, 0, 0, max(0, max_seq_len - embs.size(1)), 0, 0)
+        )
         x = self.decoder(embs)
 
         text_latents = [
@@ -283,6 +282,9 @@ class DiarizeGPT(Module):
             audio = self.whispconv(audio)
 
         elif cfg.audio_encode == "mel":
+            # Turn into a mel spectrogram
+            if audio.shape[1] == 1:
+                audio = self.mel(audio)
             audio = self.whispconv(audio)
 
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
