@@ -377,10 +377,10 @@ def _click_main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
 
 def main(
     config: str | Config,
-    edit: bool,
-    dev: bool,
-    profile: bool,
-    watch: bool,
+    edit: bool = False,
+    dev: bool = False,
+    profile: bool = False,
+    watch: bool = False,
     name: str = "",
 ):
     config: Config = load_config(config, edit)
