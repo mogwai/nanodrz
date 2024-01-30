@@ -4,6 +4,8 @@ train:
   total_steps: 30_000
   max_lr: 1e-4
   batch_size: 32
+  flash:
+    enable_flash: true
   grad_acc_steps: 8
 
 model:

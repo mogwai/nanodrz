@@ -19,5 +19,6 @@ for run in runs:
 
         if run.name != "dev":
             continue
+        
         print(run.name)
         run.delete()
