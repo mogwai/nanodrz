@@ -110,6 +110,8 @@ def load_config(config: str | Config, edit: bool) -> Config:
     if type(config) is str:
         with open(config, encoding="utf-8") as f:
             config = Config(**yaml.safe_load(f))
+    else:
+        config = Config()
 
     if config.branch is None and config.commit is None:
         config.branch = get_git_branch()
