@@ -375,12 +375,15 @@ def _click_main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
     main(config, edit, dev, profile, watch)
 
 
-def main(config: str, edit: bool, dev: bool, profile: bool, watch: bool, name: str=""):
-    if config is None:
-        config = Config()
-
-    if type(config) is str:
-        config: Config = load_config(config, edit)
+def main(
+    config: str | Config,
+    edit: bool,
+    dev: bool,
+    profile: bool,
+    watch: bool,
+    name: str = "",
+):
+    config: Config = load_config(config, edit)
 
     config.train.torch_profile = config.train.torch_profile or profile
     config.train.wandb_watch = config.train.wandb_watch or watch
