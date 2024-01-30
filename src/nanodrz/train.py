@@ -55,7 +55,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     for ds in datacfg.synth_datasets:
         print(ds)
         speakers += getattr(data, ds)()
-    
+
     print(speakers)
 
     print(
@@ -78,8 +78,8 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     model = Model(config).cuda(rank)
 
     ds = GeneratorIterableDataset(
-            model,
         data.artificial_drz_generator(
+            model,
             speakers,
             model.config.model.sample_rate,
             **datacfg.model_dump(),
@@ -108,10 +108,10 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     if train.checkpoint is not None:
         checkpoint_path = train.checkpoint
-        
+
         if "http" in checkpoint_path:
             checkpoint_path = download.dl_http_file(checkpoint_path)
-        
+
         if ":" in checkpoint_path:
             checkpoint_path = download.dl_scp_file(checkpoint_path)
 
