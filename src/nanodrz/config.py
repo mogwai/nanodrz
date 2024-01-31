@@ -40,7 +40,7 @@ class DataConfig(BaseModel):
 
     synth_datasets: list[str] = ["libritts_test"]
 
-    # scramble_labels = 
+    # scramble_labels =
 
 
 class FlashConfig(BaseModel):
@@ -50,6 +50,7 @@ class FlashConfig(BaseModel):
 
 
 class TrainConfig(BaseModel):
+    gpus: int = None
     total_steps: int = 1_000_000
 
     # If this is set to none, then the batch size will be determine automatically
@@ -108,7 +109,7 @@ def load_config(config: str | Config, edit: bool) -> Config:
         os.getenv("WANDB_API_KEY") is not None
     ), "Please make sure you have set your `WANDB_API_KEY`"
 
-    
+
     if type(config) is str:
         if "http" in config:
             config = dl_http_file(config)
