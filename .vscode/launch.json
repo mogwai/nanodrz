@@ -34,7 +34,7 @@
             "module": "nanodrz.train",
             "args": [
                 "--dev",
-                "configs/simple_no_ints_dac_codes.yaml"
+                "configs/simple_no_ints_mel.yaml"
             ],
             "justMyCode": true
         }

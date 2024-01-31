@@ -7,13 +7,11 @@ train:
   flash:
     enable_flash: true
   grad_acc_steps: 8
-
 model:
   num_embs: 1024
   dmodel: 1536
   layers: 12
   audio_encode: mel
-
 data:
   silence_max: 1
   interrupt_max: .5
