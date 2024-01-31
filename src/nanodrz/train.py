@@ -414,7 +414,10 @@ def main(
     if "MASTER_PORT" not in os.environ:
         os.environ["MASTER_PORT"] = "17778"
 
-    world_size = torch.cuda.device_count()
+    world_size = config.train.gpus
+    if world_size is None:
+        world_size = torch.cuda.device_count()
+
     if world_size > 1:
         mp.spawn(
             train,

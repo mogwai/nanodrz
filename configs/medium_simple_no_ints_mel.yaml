@@ -1,4 +1,5 @@
 train:
+  gpus: 1
   # checkpoint: /home/harry/storj/runs/nanodrz/1706300953/0006000.pt
   continue_from_checkpoint: false
   total_steps: 30_000
