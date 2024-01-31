@@ -54,7 +54,7 @@ pip install git+https://github.com/mogwai/nanodrz.git#egg=nanodrz
 ### Train
 
 ```sh
-train
+train configs/medium_simple_no_ints_mel.yaml
 ```
 
 ### Inference
