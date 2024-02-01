@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 import wandb
 from nanodrz import data, utils, download
 from nanodrz.config import Config, load_config
-from nanodrz.data import GeneratorIterableDataset, collate_fn
+from nanodrz.data import GeneratorIterableDataset, collate_fn, Speaker
 from nanodrz.model import DiarizeGPT as Model
 from nanodrz import optim, download
 from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
@@ -51,11 +51,14 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         )
 
     # Get Speakers
-    speakers = []
+    speakers: list[Speaker] = []
+    print("build speakers")
     for ds in datacfg.synth_datasets:
-        nspeakers= getattr(data, ds)()
+        nspeakers = getattr(data, ds)()
         speakers += nspeakers
+        print(ds, len(nspeakers))
 
+    assert len(set([s.name for s in speakers])) == len(speakers)
     print(
         f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
     )
