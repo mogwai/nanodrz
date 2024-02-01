@@ -143,7 +143,7 @@ def dl_libri_light_small():
         tar.extractall(extract_folder)
         tar.close()
 
-    return path.join(extract_folder, "small")
+    return path.join(extract_folder)
 
 
 def dl_libri_light_medium():
@@ -168,7 +168,7 @@ def dl_libri_light_medium():
         tar.extractall(extract_folder)
         tar.close()
 
-    return path.join(extract_folder, "medium")
+    return path.join(extract_folder)
 
 
 def dl_libri_light_large():
@@ -193,8 +193,7 @@ def dl_libri_light_large():
         tar.extractall(extract_folder)
         tar.close()
 
-    return path.join(extract_folder, "large")
-
+    return path.join(extract_folder)
 
 
 def dl_voxconverse_dev():

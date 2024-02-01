@@ -10,15 +10,30 @@ runs:list[Run] = api.runs(entity_project)
 for run in runs:
     if not len(run.summary.keys()):
         run.delete()
+        continue
 
-    if "_wandb" in run.summary:
-        runtime = run.summary.get("_wandb").get("runtime")
-
-        if runtime and runtime > 600:
-            continue
-
-        if run.name != "dev":
-            continue
-        
-        print(run.name)
+    if run.name == "dev":
         run.delete()
+        continue
+    
+    if "_wandb" not in run.summary:
+        run.delete()
+        continue
+
+    info = run.summary
+    # print(run.summary)
+    runtime = run.summary.get("_wandb").get("runtime")
+    
+    if "train/loss" not in info:
+        run.delete()
+        continue
+
+    if not runtime or runtime < 60:
+        run.delete()
+        continue
+    
+    if "_step" in info and info["_step"] < 500:
+        print(info["_step"])
+        run.delete()
+        continue
+    

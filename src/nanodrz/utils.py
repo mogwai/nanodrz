@@ -248,6 +248,7 @@ def visualise_annotation(labels: list):
     annotation = labels_to_annotation(labels)
     display(annotation)
 
+
 RESAMPLERS = {}
 
 
@@ -302,7 +303,10 @@ def cache(location=".cache") -> callable:
 
 @cache(os.path.join(CACHE_DIR, "find_non_silence_chunks"))
 def find_nonsilence_chunks(
-    audio: Tensor, sr: int, silence_threshold=0.01, min_silence_len=0.2, min_chunk_len=1
+    audio_file: str,
+    silence_threshold=0.01,
+    min_silence_len=0.2,
+    min_chunk_len=1,
 ):
     """
     Finds and returns non-silence chunks in the given audio.
@@ -318,6 +322,8 @@ def find_nonsilence_chunks(
         List[Tensor]: A list of non-silence chunks.
         List[Tuple[int, int]]: A list of tuples representing the start and end indexes of silence segments.
     """
+
+    audio, sr = torchaudio.load(audio_file)
     # Add min_silence_len+1 silence to the end of the audio
     audio = torch.cat([audio, torch.zeros(1, int(sr * min_silence_len) + 1)], dim=-1)
     amplitude = torch.abs(audio)
@@ -357,7 +363,19 @@ def find_nonsilence_chunks(
     if cur_chunk.shape[-1] != 0:
         chunks.append(cur_chunk)
 
-    return chunks, silence_indexes
+    chunk_files = []
+    bn = os.path.basename(audio_file)
+    bn, ext = bn.split(".")
+
+    os.makedirs(os.path.join(CACHE_DIR, "chunks"), exist_ok=True)
+
+    for i, c in enumerate(chunks):
+        f = bn + "_" + str(i)
+        p = os.path.join(CACHE_DIR, "chunks", f"{bn}_{str(i)}.{ext}")
+        torchaudio.save(p, c, sr)
+        chunk_files.append(f)
+
+    return chunk_files
 
 
 def load_what_you_can(checkpoint: dict, model: nn.Module):

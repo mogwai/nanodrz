@@ -5,7 +5,7 @@ import random
 from dataclasses import dataclass
 
 from tqdm import tqdm
-from os.path import expanduser
+from os.path import expanduser, join, basename
 
 import torch
 import torchaudio
@@ -15,8 +15,10 @@ from torch.utils.data import IterableDataset, Dataset
 
 from nanodrz import download
 from nanodrz.model import DiarizeGPT
+from nanodrz.constants import CACHE_DIR
 from nanodrz.utils import resample, find_nonsilence_chunks
 from nanodrz import format_conversions as formats
+from tqdm import tqdm
 
 
 @dataclass
@@ -77,11 +79,11 @@ class DiarizationDataset(Dataset):
 
         start = random.randint(0, secs - duration)
         end = start + duration
-        wav = wav[:, start : end]
+        wav = wav[:, start:end]
 
         labels = list(
             filter(
-                lambda x: x[0] * 16000 < end or  x[1] * 16000 > start,
+                lambda x: x[0] * 16000 < end or x[1] * 16000 > start,
                 labels,
             )
         )
@@ -156,19 +158,12 @@ def gather_speakers_from_folder(
     )
     speakers: list[Speaker] = []
 
-    for file in wav_files:
+    for file in tqdm(list(wav_files), desc=folder, leave=False):
         # Extract the speaker name from the file path
         speaker_name = retrieve_speaker(file)
-        utt = Utterance()
-        utt.file_url = file
 
-        stop = False
-        for check in file_filters:
-            if not check(utt):
-                stop = True
-                break
-        if stop:
-            continue
+        # Seperate into smaller files
+        chunk_files = find_nonsilence_chunks(file)
 
         # Check if the speaker object already exists
         speaker = None
@@ -184,7 +179,13 @@ def gather_speakers_from_folder(
             speakers.append(speaker)
             speaker.utts = []
 
-        speaker.utts.append(utt)
+        for c in chunk_files:
+            utt = Utterance()
+            utt.file_url = c
+            speaker.utts.append(utt)
+
+    for s in speakers:
+        s.utts = list(enumerate(s.utts))
 
     return speakers
 
@@ -207,7 +208,6 @@ def libritts_dev() -> list[Speaker]:
 
 def librilight_small() -> list[Speaker]:
     folder = download.dl_libri_light_small()
-
     return gather_speakers_from_folder(
         folder,
         lambda x: x.split("/")[-3],
@@ -235,17 +235,17 @@ def voxconverse_dev(
 ) -> DiarizationDataset:
     folder = download.dl_voxconverse_dev()
     ds = DiarizationDataset(folder, sr, max_seconds)
-    
+
     delete = []
-    
-    for i in tqdm(range(len(ds)),desc="Filtering voxconverse", leave=False):
+
+    for i in tqdm(range(len(ds)), desc="Filtering voxconverse", leave=False):
         labels = set([l[-1] for l in ds[i][1]])
         if len(labels) > max_speakers:
             delete.append(i)
 
     for i in sorted(delete, reverse=True):
         del ds.rttm_files[i]
-    
+
     return ds
 
 
@@ -286,31 +286,54 @@ def artificial_diarisation_sample(
     sr=16000,
     **kwargs,
 ):
+    """
+    TODO this method could be a lot smarter, finding chunks that actually fit with a querable
+    tts dataset.
+    """
     if speakers is None:
         speakers = libritts_test()
-        
+
     audio = torch.zeros(1, 0)
     names, labels = [], []
 
     cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
     seconds = random.uniform(min_secs, max_secs - 1)
-
     last_speaker = None
     # While we're still less than the target secs
+    last_i = None
+
     while audio.shape[-1] / sr < seconds:
         # Pick a random speaker
-        speaker = random.choice(cur_speakers)
+        speaker: Speaker = random.choice(cur_speakers)
 
-        if speaker.name == last_speaker:
-            continue
+        if speaker.name == last_speaker and len(speaker.utts) > last_i:
+            # If the sample is short enough, add it on to the end of the last one with 200ms
+            next_utt = speaker.utts[last_i + 1].file_url
+            if not next_utt.endswith(str(last_i + 1)):
+                continue
 
-        last_speaker = speaker.name
+            next_utt = join(CACHE_DIR, "chunks", next_utt)
+            next_sample, sr = torchaudio.load(next_utt)
+            next_sample = resample(ssr, sr, next_sample)
+            
+            # We're long enough
+            if (audio.shape[-1] + next_sample.shape[-1] + 0.2 * ssr) / sr > seconds:
+                break
+
+            padding = torch.zeros(1, next_sample.shape[-1] + 0.2 * ssr)
+            audio = torch.cat((audio, padding), dim=-1)
+            audio[:, -next_sample.shape[-1] :] += next_sample
+
+            if (audio.shape[-1] + next_sample.shape[-1] + 0.2 * ssr) / sr > seconds:
+                break
 
         # Pick a random sample
-        random_sample_file = random.choice(speaker.utts).file_url
+        last_i, random_sample_file = random.choice(speaker.utts).file_url
+
+        #
+        random_sample_file = join(CACHE_DIR, "chunks", random_sample_file)
         random_sample, ssr = torchaudio.load(random_sample_file)
         random_sample = resample(ssr, sr, random_sample)
-        random_sample = random.choice(find_nonsilence_chunks(random_sample, sr)[0])
 
         if (audio.shape[-1] + random_sample.shape[-1]) / sr > seconds:
             break
