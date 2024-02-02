@@ -16,6 +16,7 @@ import torchaudio
 from torch import Tensor
 from nanodrz.format_conversions import labels_to_annotation
 from torchaudio.transforms import Resample
+import torch.nn.functional as F
 
 from nanodrz.constants import CACHE_DIR
 
@@ -212,9 +213,10 @@ def sha256(b: Union[float, list, Tensor, str, bytes, np.ndarray]):
 
 def play(audio: [Tensor, np.ndarray, str], sr=16000, autoplay=True):
     from IPython.display import Audio, display
+
     if type(audio) is str:
         audio, sr = torchaudio.load(audio)
-    
+
     assert audio.numel() > 100, "play() needs a non empty audio array"
 
     audio = audio.flatten()
@@ -225,7 +227,7 @@ def play(audio: [Tensor, np.ndarray, str], sr=16000, autoplay=True):
     if audio.shape[0] > 1:
         audio = audio.sum(dim=0)
 
-    display(Audio(audio.cpu().detach(), rate=sr, autoplay=autoplay))
+    display(Audio(audio.cpu().detach(), rate=sr, autoplay=autoplay, normalize=False))
 
 
 def to_device(obj: [nn.Module, Tensor, list, dict], targets: str | list[str]):
@@ -280,11 +282,10 @@ def hash_arguments(args, kwargs):
 
 
 def cache(location=".cache") -> callable:
-    os.makedirs(location, exist_ok=True)
-
     def inner_function(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
+            os.makedirs(location, exist_ok=True)
             s = hash_arguments(args, kwargs)
             key = f.__name__ + s
             # Hash the args correctly
@@ -308,7 +309,7 @@ def find_nonsilence_chunks(
     audio_file: str,
     silence_threshold=0.01,
     min_silence_len=0.2,
-    min_chunk_len=1,
+    device="cpu",
 ):
     """
     Finds and returns non-silence chunks in the given audio.
@@ -324,60 +325,74 @@ def find_nonsilence_chunks(
         List[Tensor]: A list of non-silence chunks.
         List[Tuple[int, int]]: A list of tuples representing the start and end indexes of silence segments.
     """
-
     audio, sr = torchaudio.load(audio_file)
-    # Add min_silence_len+1 silence to the end of the audio
-    audio = torch.cat([audio, torch.zeros(1, int(sr * min_silence_len) + 1)], dim=-1)
-    amplitude = torch.abs(audio)
-    is_silence = amplitude < silence_threshold
-    silent_frames = is_silence.all(dim=0)
 
-    silence_indexes = []
-    start_idx = 0
+    chunks = find_nonsilence_chunks_vtrz(
+        audio.to(device),
+        silence_threshold,
+        min_silence_len,
+        sr,
+        device=device,
+    )
 
-    for idx, is_silent in enumerate(silent_frames):
-        if is_silent and start_idx == -1:
-            start_idx = idx
-        elif not is_silent and start_idx != -1:
-            if (idx - start_idx) / sr >= min_silence_len:
-                silence_indexes.append((start_idx, idx))
-            start_idx = -1
-
-    if (
-        start_idx is not None
-        and (len(silent_frames) - start_idx) / sr >= min_silence_len
-    ):
-        silence_indexes.append((start_idx, len(silent_frames)))
-
-    chunks = []
-    cur_chunk = torch.zeros(1, 0)
-    cur_idx = 0
-
-    for b, e in silence_indexes:
-        cur_chunk = torch.cat([cur_chunk, audio[:, cur_idx:b]], dim=-1)
-        if cur_chunk.shape[-1] > sr * min_chunk_len:
-            cur_idx = e
-            chunks.append(cur_chunk)
-            cur_chunk = torch.zeros(1, 0)
-        else:
-            cur_idx = b
-
-    if cur_chunk.shape[-1] != 0:
-        chunks.append(cur_chunk)
-
-    chunk_files = []
     bn = os.path.basename(audio_file)
-    ext = bn.split(".")[-1]
+    ext = "." + bn.split(".")[-1]
     bn = bn.replace(ext, "")
+    chunk_paths = []
     os.makedirs(os.path.join(CACHE_DIR, "chunks"), exist_ok=True)
 
     for i, c in enumerate(chunks):
-        f = bn + "_" + str(i)
-        p = os.path.join(CACHE_DIR, "chunks", f"{bn}_{str(i)}.{ext}")
-        torchaudio.save(p, c, sr)
-        chunk_files.append(f)
+        f = bn + "_" + str(i) + ext
+        p = os.path.join(CACHE_DIR, "chunks", f)
+        chunk_paths.append(p)
+        torchaudio.save(p, c.cpu(), sr)
 
-    return chunk_files
+    return chunk_paths
+
+
+@torch.jit.script
+def find_nonsilence_chunks_vtrz(
+    audio: torch.Tensor,
+    silence_threshold: float = 0.02,
+    min_silence_len: float = 0.3,
+    sr: int = 16000,
+    min_duration: int = 4,
+    device: torch.device = "cuda",
+) -> list[torch.Tensor]:
+    chunk_size = 16000 * 60
+
+    # Pad the audio shape to be divisible by chunk_size
+    padding_length = chunk_size - (audio.shape[-1] % chunk_size)
+    audio = torch.cat((audio, torch.zeros(1, padding_length, device=device)), dim=-1)
+
+    silence = torch.abs(audio) < silence_threshold
+    silence = silence.float()
+
+    kernel_size = int(min_silence_len * sr)
+    kernel = torch.ones(1, 1, kernel_size, device=device)
+
+    if kernel_size % 2 != 0:
+        kernel_size += 1
+
+    out = []
+
+    cur_chunk = torch.zeros(1, 0, device=device)
+
+    for i, chunk in enumerate(silence.chunk(silence.shape[-1] // chunk_size, dim=-1)):
+        silence_padding = torch.ones(1, int(sr * min_silence_len), device=device)
+        chunk = torch.cat((silence_padding, chunk, silence_padding), dim=1)
+        conv_output = F.conv1d(chunk[None], kernel, stride=1, padding=kernel_size // 2)
+        idxs = (conv_output != kernel_size).int().flatten()
+        idxs = (idxs[1:] - idxs[:-1]).eq(1).nonzero().flatten()
+
+        for i in range(len(idxs) - 1):
+            c = audio[:, idxs[i] - kernel_size // 2 : idxs[i + 1] - kernel_size // 2]
+            cur_chunk = torch.cat((cur_chunk, c), dim=-1)
+            if (cur_chunk.shape[-1] / sr) > min_duration:
+                out.append(cur_chunk)
+                cur_chunk = torch.zeros(1, 0, device=device)
+
+    return out
 
 
 def load_what_you_can(checkpoint: dict, model: nn.Module):
