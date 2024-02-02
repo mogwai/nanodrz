@@ -1,0 +1,23 @@
+train:
+  gpus: 1
+  checkpoint: gpudev:/home/harry/storj/runs/nanodrz/1706615262/0004500.pt
+  continue_from_checkpoint: false
+  total_steps: 30_000
+  max_lr: 1e-4
+  batch_size: 24
+  flash:
+    enable_flash: true
+  grad_acc_steps: 4
+model:
+  num_embs: 1024
+  dmodel: 1536
+  layers: 12
+  audio_encode: mel
+data:
+  silence_max: 1
+  interrupt_max: .5
+  num_speakers: 5
+  synth_datasets:
+    - librilight_small
+    - libritts_test
+    - libritts_dev
