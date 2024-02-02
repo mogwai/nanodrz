@@ -212,7 +212,9 @@ def sha256(b: Union[float, list, Tensor, str, bytes, np.ndarray]):
 
 def play(audio: [Tensor, np.ndarray, str], sr=16000, autoplay=True):
     from IPython.display import Audio, display
-
+    if type(audio) is str:
+        audio, sr = torchaudio.load(audio)
+    
     assert audio.numel() > 100, "play() needs a non empty audio array"
 
     audio = audio.flatten()
@@ -301,7 +303,7 @@ def cache(location=".cache") -> callable:
     return inner_function
 
 
-@cache(os.path.join(CACHE_DIR, "find_non_silence_chunks"))
+@cache(os.path.join(CACHE_DIR, "find_nonsilence"))
 def find_nonsilence_chunks(
     audio_file: str,
     silence_threshold=0.01,
@@ -365,8 +367,8 @@ def find_nonsilence_chunks(
 
     chunk_files = []
     bn = os.path.basename(audio_file)
-    bn, ext = bn.split(".")
-
+    ext = bn.split(".")[-1]
+    bn = bn.replace(ext, "")
     os.makedirs(os.path.join(CACHE_DIR, "chunks"), exist_ok=True)
 
     for i, c in enumerate(chunks):
@@ -524,3 +526,17 @@ def shortnumberstring(n: int) -> str:
     )
 
     return "{:.0f}{}".format(n / 10 ** (3 * millidx), millnames[millidx])
+
+
+def multimap(items: list, func: callable, workers=4, desc=None) -> list:
+    """
+    Quick and dirty multiprocessing that will return the result of func if it returns None
+    """
+    from tqdm.contrib.concurrent import process_map
+
+    print("multi", items, func)
+    results = process_map(
+        func, items, leave=False, desc=desc, max_workers=workers, total=len(items)
+    )
+    print("multiend")
+    return list(filter(lambda x: x is not None, results))
