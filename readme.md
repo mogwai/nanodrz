@@ -1,6 +1,10 @@
+
+
 # Nano Diarization - WIP!
 
 [Pix2Seq](https://ai.googleblog.com/2022/04/pix2seq-new-language-interface-for.html) for Speaker Diarization.
+
+Not quite so nano anymore ;) Lots of functions!
 
 # Overview
 
