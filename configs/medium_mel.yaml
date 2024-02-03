@@ -1,7 +1,7 @@
 train:
   gpus: 1
-  checkpoint: gpudev:/home/harry/storj/runs/nanodrz/1706615262/0004500.pt
-  continue_from_checkpoint: false
+  checkpoint: /home/harry/runs/nanodrz/1706952067/0000500.pt
+  continue_from_checkpoint: true
   total_steps: 30_000
   max_lr: 1e-4
   batch_size: 24
