@@ -14,11 +14,11 @@ from os.path import basename, expanduser
 import glob
 from nanodrz.utils import find_nonsilence_chunks
 
-# model = DiarizeGPT()
+model = DiarizeGPT()
 
-# ds = GeneratorIterableDataset(data.artificial_drz_generator(model))
+ds = GeneratorIterableDataset(data.artificial_drz_generator(model))
 
 
-# ds2 = data.voxconverse_dev()
-# for i in range(len(ds2)):
-#     x = ds2[i
+ds2 = data.voxconverse_dev()
+for i in range(len(ds2)):
+    x = ds2[i]
