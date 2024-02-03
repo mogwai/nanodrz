@@ -36,7 +36,7 @@ class Speaker:
     # Audio samples
     name: str | None = None
     # Change this to a list of files
-    utts: list[Utterance] | None = None
+    utts: list[str] | None = None
 
     def __repr__(self):
         return self.name
@@ -188,12 +188,10 @@ def gather_speakers_from_folder(
             speakers[speaker_name] = speaker
 
         # Seperate into smaller files
-        chunk_files = find_nonsilence_chunks(file)
+        chunk_files = find_nonsilence_chunks(file, device="cuda")
 
-        for c in chunk_files:
-            utt = Utterance()
-            utt.file_url = c
-            speakers[speaker_name].utts.append(utt)
+        
+        speakers[speaker_name].utts += chunk_files
 
     for s in speakers.values():
         s.utts = list(enumerate(s.utts))
@@ -317,7 +315,6 @@ def artificial_diarisation_sample(
         # Pick a random speaker
         speaker: Speaker = random.choice(cur_speakers)
 
-        print(audio.shape)
         if speaker.name == last_speaker and len(speaker.utts) > last_i:
             # If the sample is short enough, add it on to the end of the last one with 200ms
             next_utt = speaker.utts[last_i + 1].file_url
@@ -340,7 +337,7 @@ def artificial_diarisation_sample(
                 break
 
         # Pick a random sample
-        last_i, random_sample_file = random.choice(speaker.utts).file_url
+        last_i, random_sample_file = random.choice(speaker.utts)
 
         random_sample_file = join(CACHE_DIR, "chunks", random_sample_file)
         random_sample, ssr = torchaudio.load(random_sample_file)
