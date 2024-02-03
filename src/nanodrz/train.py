@@ -240,24 +240,24 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 prof.step()
 
             if step % train.log_every == 0:
-                loss = loss.item()
-                losses.append(loss)
-                loss_slope = optim.calculate_smoothed_slope(
-                    losses,
-                    regression_win=train.regression_win,
-                    smoothing_constant=train.regression_smoothing,
-                )
+                loss = loss.item()*gradient_accumulation_steps
+                # losses.append(loss)
+                # loss_slope = optim.calculate_smoothed_slope(
+                #     losses,
+                #     regression_win=train.regression_win,
+                #     smoothing_constant=train.regression_smoothing,
+                # )
 
-                if loss_slope > 1e-3 and steps > 400:
-                    wandb.alert("Explosion Warning", "Check loss graph")
+                # if loss_slope > 1e-3 and steps > 400:
+                #     wandb.alert("Explosion Warning", "Check loss graph")
 
                 metrics = {
-                    "train/loss": gradient_accumulation_steps * loss,
+                    "train/loss": loss,
                     "train/grad_norm": grad_norm.item(),
                     "train/lr": lr,
                     "train/batch_duration": t2 - t1,
                     "hours_seen": hours_seen,
-                    "train/loss_slope": loss_slope,
+                    # "train/loss_slope": loss_slope,
                 }
 
                 wandb_log(

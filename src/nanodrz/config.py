@@ -75,7 +75,7 @@ class TrainConfig(BaseModel):
     do_val: bool = False
     val_every: int = 10_000
 
-    checkpoint_every: int = 500
+    checkpoint_every: int = 2000
     checkpoint: str | None = None
     continue_from_checkpoint: bool = True
 

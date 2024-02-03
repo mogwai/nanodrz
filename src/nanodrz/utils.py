@@ -4,6 +4,8 @@ import subprocess
 from typing import Union
 
 from librosa.filters import mel as librosa_mel_fn
+import math
+
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -522,17 +524,21 @@ def dict_to_strs(d, prefix="") -> str:
     return s if prefix != "" else "|".join(s)
 
 
-millnames = ["", "K", "M"]
+def human_readable_time(secs: int) -> str:
+    days = secs // (24 * 3600)
+    hours = (secs % (24 * 3600)) // 3600
+    minutes = (secs % 3600) // 60
+    seconds = secs % 60
+    return f"{days}d {hours}h {minutes}m {seconds}s"
 
 
-def shortnumberstring(n: int) -> str:
-    import math
-
+def human_readable_number(n: int) -> str:
     """Converts long numbers to shorthand:
     1123 -> 1K
     123123 -> 123K
     """
     n = float(n)
+    millnames = ["", "K", "M"]
     millidx = max(
         0,
         min(
