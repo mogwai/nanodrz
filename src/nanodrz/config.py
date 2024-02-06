@@ -82,7 +82,7 @@ class TrainConfig(BaseModel):
     amp_dtype: str | None = None
     torch_profile: bool = False
     wandb_watch: bool = False
-    log_every: int = 1
+    log_every: int = 10
     watch_every: int = 1000
 
     regression_win: int = 400
