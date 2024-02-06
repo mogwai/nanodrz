@@ -138,28 +138,13 @@ def collate_fn(model: DiarizeGPT) -> callable:
 
     return _collate
 
-lock = True
-
-def process_file(file, speakers, retrieve_speaker):
-    # Extract the speaker name from the file path
-    speaker_name = retrieve_speaker(file)
-    print(speakers)
-
-    # Seperate into smaller files
-    chunk_files = find_nonsilence_chunks(file)
-    print(chunk_files)
-
-    for c in chunk_files:
-        utt = Utterance()
-        utt.file_url = c
-        speakers[speaker_name].utts.append(utt)
-
 
 def gather_speakers_from_folder(
     folder: str,
     retrieve_speaker: callable,
     exts: list[str] = ["wav", "opus", "mp3", "flac"],
     file_filters: list[callable] = [],
+    split_silence: bool = True,
 ):
     """
     Retrieves all the audio files from a specific directory recursively.
@@ -188,15 +173,17 @@ def gather_speakers_from_folder(
             speakers[speaker_name] = speaker
 
         # Seperate into smaller files
-        chunk_files = find_nonsilence_chunks(file, device="cuda")
+        if split_silence:
+            chunk_files = find_nonsilence_chunks(file, device="cuda")
+        else:
+            chunk_files = [file]
 
-        
         speakers[speaker_name].utts += chunk_files
 
     for s in speakers.values():
         s.utts = list(enumerate(s.utts))
 
-    return speakers.values()
+    return list(speakers.values())
 
 
 def libritts_test() -> list[Speaker]:
@@ -207,19 +194,22 @@ def libritts_test() -> list[Speaker]:
     )
 
 
-def libritts_dev() -> list[Speaker]:
+def libritts_dev(split_silence=True) -> list[Speaker]:
     folder = download.dl_libritts_dev()
     return gather_speakers_from_folder(
         folder,
         lambda x: os.path.basename(x).split("_")[0],
+        split_silence=split_silence,
     )
+    
 
 
-def librilight_small() -> list[Speaker]:
+def librilight_small(split_silence=True) -> list[Speaker]:
     folder = download.dl_libri_light_small()
     return gather_speakers_from_folder(
         folder,
         lambda x: x.split("/")[-3],
+        split_silence=split_silence,
     )
 
 
@@ -266,7 +256,7 @@ def artificial_drz_generator(
     **kwargs,
 ):
     if speakers is None:
-        speakers = libritts_test()
+        speakers = libritts_dev()
     while True:
         audio, label = artificial_diarisation_sample(
             speakers,
@@ -300,13 +290,14 @@ def artificial_diarisation_sample(
     tts dataset.
     """
     if speakers is None:
-        speakers = libritts_test()
+        speakers = libritts_dev()
 
     audio = torch.zeros(1, 0)
     names, labels = [], []
 
     cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
     seconds = random.uniform(min_secs, max_secs - 1)
+    print("target secs", seconds)
     last_speaker = None
     # While we're still less than the target secs
     last_i = None
@@ -315,35 +306,31 @@ def artificial_diarisation_sample(
         # Pick a random speaker
         speaker: Speaker = random.choice(cur_speakers)
 
-        if speaker.name == last_speaker and len(speaker.utts) > last_i:
-            # If the sample is short enough, add it on to the end of the last one with 200ms
-            next_utt = speaker.utts[last_i + 1].file_url
-            if not next_utt.endswith(str(last_i + 1)):
-                continue
-
-            next_utt = join(CACHE_DIR, "chunks", next_utt)
-            next_sample, sr = torchaudio.load(next_utt)
-            next_sample = resample(ssr, sr, next_sample)
-
-            # We're long enough
-            if (audio.shape[-1] + next_sample.shape[-1] + 0.2 * ssr) / sr > seconds:
+        if last_speaker is not None and speaker.name == last_speaker.name:
+            next_utt = join(CACHE_DIR, "chunks", last_speaker.utts[last_i + 1][1])
+            next_sample, ssr = torchaudio.load(next_utt)
+            next_sample = resample(sr, ssr, next_sample)
+            if (audio.shape[-1] + next_sample.shape[-1]) / sr > seconds:
+                if audio.shape[-1] == 0:
+                    continue
                 break
 
-            padding = torch.zeros(1, next_sample.shape[-1] + 0.2 * ssr)
-            audio = torch.cat((audio, padding), dim=-1)
-            audio[:, -next_sample.shape[-1] :] += next_sample
-
-            if (audio.shape[-1] + next_sample.shape[-1] + 0.2 * ssr) / sr > seconds:
-                break
+            labels[-1][1] += next_sample.shape[-1] / sr
+            audio = torch.cat((audio, next_sample), dim=-1)
+            last_i += 1
+            continue
 
         # Pick a random sample
+        last_speaker = speaker
         last_i, random_sample_file = random.choice(speaker.utts)
 
         random_sample_file = join(CACHE_DIR, "chunks", random_sample_file)
         random_sample, ssr = torchaudio.load(random_sample_file)
-        random_sample = resample(ssr, sr, random_sample)
+        random_sample = resample(sr, ssr, random_sample)
 
         if (audio.shape[-1] + random_sample.shape[-1]) / sr > seconds:
+            if audio.shape[-1] == 0:
+                continue
             break
 
         random_sample = random_sample.sum(dim=0)[None]
@@ -379,4 +366,7 @@ def min_duration(min_secs: int = 0.1) -> callable:
 
 
 if __name__ == "__main__":
-    print(librilight_small())
+    device = torch.device("cuda:1")
+    torch.cuda.set_device(device)
+    speakers = librilight_medium()
+    sample, labels = artificial_diarisation_sample(speakers)
