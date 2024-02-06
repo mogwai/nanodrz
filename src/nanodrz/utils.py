@@ -252,6 +252,7 @@ def visualise_annotation(labels: list):
     from IPython.display import display
 
     annotation = labels_to_annotation(labels)
+    print(annotation)
     display(annotation)
 
 
@@ -306,11 +307,12 @@ def cache(location=".cache") -> callable:
     return inner_function
 
 
-@cache(os.path.join(CACHE_DIR, "find_nonsilence"))
+# @cache(os.path.join(CACHE_DIR, "find_nonsilence"))
 def find_nonsilence_chunks(
     audio_file: str,
     silence_threshold=0.01,
     min_silence_len=0.2,
+    min_duration=3,
     device="cpu",
 ):
     """
@@ -328,13 +330,15 @@ def find_nonsilence_chunks(
         List[Tuple[int, int]]: A list of tuples representing the start and end indexes of silence segments.
     """
     audio, sr = torchaudio.load(audio_file)
-
+    audio = resample(sr, 16000, audio)
+    sr = 16000
     chunks = find_nonsilence_chunks_vtrz(
         audio.to(device),
         silence_threshold,
         min_silence_len,
         sr,
         device=device,
+        min_duration=min_duration,
     )
 
     bn = os.path.basename(audio_file)
@@ -352,7 +356,7 @@ def find_nonsilence_chunks(
     return chunk_paths
 
 
-@torch.jit.script
+# @torch.jit.script
 def find_nonsilence_chunks_vtrz(
     audio: torch.Tensor,
     silence_threshold: float = 0.02,
@@ -360,8 +364,10 @@ def find_nonsilence_chunks_vtrz(
     sr: int = 16000,
     min_duration: int = 4,
     device: torch.device = "cuda",
+    chunk_size: int = None,
 ) -> list[torch.Tensor]:
-    chunk_size = 16000 * 60
+    if chunk_size is None:
+        chunk_size = sr * 60
 
     # Pad the audio shape to be divisible by chunk_size
     padding_length = chunk_size - (audio.shape[-1] % chunk_size)
@@ -373,7 +379,7 @@ def find_nonsilence_chunks_vtrz(
     kernel_size = int(min_silence_len * sr)
     kernel = torch.ones(1, 1, kernel_size, device=device)
 
-    if kernel_size % 2 != 0:
+    if kernel_size % 2 == 0:
         kernel_size += 1
 
     out = []
@@ -386,7 +392,7 @@ def find_nonsilence_chunks_vtrz(
         conv_output = F.conv1d(chunk[None], kernel, stride=1, padding=kernel_size // 2)
         idxs = (conv_output != kernel_size).int().flatten()
         idxs = (idxs[1:] - idxs[:-1]).eq(1).nonzero().flatten()
-
+        
         for i in range(len(idxs) - 1):
             c = audio[:, idxs[i] - kernel_size // 2 : idxs[i + 1] - kernel_size // 2]
             cur_chunk = torch.cat((cur_chunk, c), dim=-1)
