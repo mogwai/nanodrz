@@ -240,7 +240,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                 prof.step()
 
             if step % train.log_every == 0:
-                loss = loss.item()*gradient_accumulation_steps
+                loss = loss.item() * gradient_accumulation_steps
                 # losses.append(loss)
                 # loss_slope = optim.calculate_smoothed_slope(
                 #     losses,
