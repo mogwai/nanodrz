@@ -159,6 +159,8 @@ def gather_speakers_from_folder(
     )
     speakers: dict[str, Speaker] = {}
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
     for file in tqdm(list(wav_files), desc=folder, leave=False):
         # Extract the speaker name from the file path
         speaker_name = retrieve_speaker(file)
@@ -174,7 +176,7 @@ def gather_speakers_from_folder(
 
         # Seperate into smaller files
         if split_silence:
-            chunk_files = find_nonsilence_chunks(file, device="cuda")
+            chunk_files = find_nonsilence_chunks(file, device=device)
         else:
             chunk_files = [file]
 

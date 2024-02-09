@@ -366,33 +366,41 @@ def find_nonsilence_chunks_vtrz(
     device: torch.device = "cuda",
     chunk_size: int = None,
 ) -> list[torch.Tensor]:
+    if audio.shape[-1] < sr * min_duration:
+        return [audio]
+
     if chunk_size is None:
         chunk_size = sr * 60
 
-    # Pad the audio shape to be divisible by chunk_size
-    padding_length = chunk_size - (audio.shape[-1] % chunk_size)
-    audio = torch.cat((audio, torch.zeros(1, padding_length, device=device)), dim=-1)
+    if audio.shape[-1] > chunk_size:
+        # Pad the audio shape to be divisible by chunk_size
+        padding_length = chunk_size - (audio.shape[-1] % chunk_size)
+        audio = torch.cat(
+            (audio, torch.zeros(1, padding_length, device=device)), dim=-1
+        )
+    else:
+        chunk_size = audio.shape[-1]
 
     silence = torch.abs(audio) < silence_threshold
     silence = silence.float()
 
     kernel_size = int(min_silence_len * sr)
-    kernel = torch.ones(1, 1, kernel_size, device=device)
 
     if kernel_size % 2 == 0:
         kernel_size += 1
 
+    kernel = torch.ones(1, 1, kernel_size, device=device)
+
     out = []
 
     cur_chunk = torch.zeros(1, 0, device=device)
-
     for i, chunk in enumerate(silence.chunk(silence.shape[-1] // chunk_size, dim=-1)):
         silence_padding = torch.ones(1, int(sr * min_silence_len), device=device)
         chunk = torch.cat((silence_padding, chunk, silence_padding), dim=1)
         conv_output = F.conv1d(chunk[None], kernel, stride=1, padding=kernel_size // 2)
         idxs = (conv_output != kernel_size).int().flatten()
         idxs = (idxs[1:] - idxs[:-1]).eq(1).nonzero().flatten()
-        
+
         for i in range(len(idxs) - 1):
             c = audio[:, idxs[i] - kernel_size // 2 : idxs[i + 1] - kernel_size // 2]
             cur_chunk = torch.cat((cur_chunk, c), dim=-1)
