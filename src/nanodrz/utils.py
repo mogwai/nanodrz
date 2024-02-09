@@ -307,13 +307,14 @@ def cache(location=".cache") -> callable:
     return inner_function
 
 
-# @cache(os.path.join(CACHE_DIR, "find_nonsilence"))
+@cache(os.path.join(CACHE_DIR, "find_nonsilence"))
 def find_nonsilence_chunks(
     audio_file: str,
     silence_threshold=0.01,
     min_silence_len=0.2,
     min_duration=3,
     device="cpu",
+    chunk_size: int = None,
 ):
     """
     Finds and returns non-silence chunks in the given audio.
@@ -356,7 +357,7 @@ def find_nonsilence_chunks(
     return chunk_paths
 
 
-# @torch.jit.script
+@torch.jit.script
 def find_nonsilence_chunks_vtrz(
     audio: torch.Tensor,
     silence_threshold: float = 0.02,
@@ -394,15 +395,18 @@ def find_nonsilence_chunks_vtrz(
     out = []
 
     cur_chunk = torch.zeros(1, 0, device=device)
+
     for i, chunk in enumerate(silence.chunk(silence.shape[-1] // chunk_size, dim=-1)):
+        cur_chunk = torch.zeros(1, 0, device=device)
         silence_padding = torch.ones(1, int(sr * min_silence_len), device=device)
         chunk = torch.cat((silence_padding, chunk, silence_padding), dim=1)
         conv_output = F.conv1d(chunk[None], kernel, stride=1, padding=kernel_size // 2)
         idxs = (conv_output != kernel_size).int().flatten()
         idxs = (idxs[1:] - idxs[:-1]).eq(1).nonzero().flatten()
 
-        for i in range(len(idxs) - 1):
-            c = audio[:, idxs[i] - kernel_size // 2 : idxs[i + 1] - kernel_size // 2]
+        shift = i*chunk_size
+        for j in range(len(idxs) - 1):
+            c = audio[:, shift+(idxs[j] - kernel_size // 2) : shift+(idxs[j + 1] - kernel_size // 2)]
             cur_chunk = torch.cat((cur_chunk, c), dim=-1)
             if (cur_chunk.shape[-1] / sr) > min_duration:
                 out.append(cur_chunk)
