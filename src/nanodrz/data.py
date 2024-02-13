@@ -203,7 +203,7 @@ def libritts_dev(split_silence=True) -> list[Speaker]:
         lambda x: os.path.basename(x).split("_")[0],
         split_silence=split_silence,
     )
-    
+
 
 
 def librilight_small(split_silence=True) -> list[Speaker]:
@@ -299,7 +299,6 @@ def artificial_diarisation_sample(
 
     cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
     seconds = random.uniform(min_secs, max_secs - 1)
-    print("target secs", seconds)
     last_speaker = None
     # While we're still less than the target secs
     last_i = None
@@ -307,8 +306,7 @@ def artificial_diarisation_sample(
     while audio.shape[-1] / sr < seconds:
         # Pick a random speaker
         speaker: Speaker = random.choice(cur_speakers)
-
-        if last_speaker is not None and speaker.name == last_speaker.name:
+        if last_speaker is not None and speaker.name == last_speaker.name and last_i + 1 < len(speaker.utts):
             next_utt = join(CACHE_DIR, "chunks", last_speaker.utts[last_i + 1][1])
             next_sample, ssr = torchaudio.load(next_utt)
             next_sample = resample(sr, ssr, next_sample)
@@ -321,13 +319,22 @@ def artificial_diarisation_sample(
             audio = torch.cat((audio, next_sample), dim=-1)
             last_i += 1
             continue
+        
+        if len(speaker.utts) < 3:
+            cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
+            continue
 
-        # Pick a random sample
-        last_speaker = speaker
         last_i, random_sample_file = random.choice(speaker.utts)
 
         random_sample_file = join(CACHE_DIR, "chunks", random_sample_file)
-        random_sample, ssr = torchaudio.load(random_sample_file)
+        
+        try:
+            random_sample, ssr = torchaudio.load(random_sample_file)
+        except Exception as e:
+            print(e)
+            cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
+            continue
+
         random_sample = resample(sr, ssr, random_sample)
 
         if (audio.shape[-1] + random_sample.shape[-1]) / sr > seconds:
@@ -359,6 +366,9 @@ def artificial_diarisation_sample(
         labels.append(
             [start_label, start_label + random_sample.shape[-1] / sr, name_label]
         )
+        # Pick a random sample
+        last_speaker = speaker
+
 
     return audio, labels
 

@@ -365,7 +365,7 @@ def find_nonsilence_chunks_vtrz(
     sr: int = 16000,
     min_duration: int = 4,
     device: torch.device = "cuda",
-    chunk_size: int = None,
+    chunk_size: int = 60*16000,
 ) -> list[torch.Tensor]:
     if audio.shape[-1] < sr * min_duration:
         return [audio]
