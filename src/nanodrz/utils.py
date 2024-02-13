@@ -315,9 +315,8 @@ def find_nonsilence_chunks(
     audio_file: str,
     silence_threshold=0.01,
     min_silence_len=0.2,
-    min_duration=3,
+    min_duration=1,
     device="cpu",
-    chunk_size: int = None,
 ):
     """
     Finds and returns non-silence chunks in the given audio.
