@@ -50,7 +50,7 @@ class FlashConfig(BaseModel):
 
 
 class TrainConfig(BaseModel):
-    gpus: int = None
+    gpus: int = 0
     total_steps: int = 1_000_000
 
     # If this is set to none, then the batch size will be determine automatically
@@ -82,7 +82,7 @@ class TrainConfig(BaseModel):
     amp_dtype: str | None = None
     torch_profile: bool = False
     wandb_watch: bool = False
-    log_every: int = 10
+    log_every: int = 1
     watch_every: int = 1000
 
     regression_win: int = 400

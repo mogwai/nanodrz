@@ -58,7 +58,15 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         speakers += nspeakers
         print(ds, len(nspeakers))
 
-    assert len(set([s.name for s in speakers])) == len(speakers)
+    delete = []
+    for i in range(len(speakers)):
+        if len(speakers[i].utts) < 3:
+            delete.append(i)
+    
+    delete.reverse()
+    for d in delete:
+        del speakers[d]
+    # assert len(set([s.name for s in speakers])) == len(speakers)
     print(
         f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
     )

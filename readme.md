@@ -8,7 +8,7 @@ Not quite so nano anymore ;) Lots of functions!
 
 # Overview
 
-Diarization models in the wild currently combine a variety of models and are quite complex. This approach attempts to use synthetic data to experiment with overlapping speech difficulty and notably uses new audio compression techniques to compress audio into a format that can be decoded by a transformer. 
+Diarization models in the wild currently combine a variety of models and are quite complex. This approach attempts to use synthetic data to experiment with overlapping speech difficulty.
 
 ### Architecture
 
