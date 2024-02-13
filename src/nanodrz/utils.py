@@ -262,6 +262,9 @@ RESAMPLERS = {}
 def resample(source: int, target: int, audio: Tensor):
     """Maintains classes globally for resampling"""
     global RESAMPLERS
+    if source == target:
+        return audio
+
 
     # Check resampler
     if source not in RESAMPLERS:

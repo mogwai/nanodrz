@@ -10,7 +10,13 @@ from urllib import request
 import zipfile
 import shutil
 
+def dl(link: str):
+    if ":" in link:
+        return dl_scp_file(link)
+    else:
+        return dl_http_file(link)
 
+    
 def dl_scp_file(link: str):
     """
     Downloads a file using rsync and scp subprocess

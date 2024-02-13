@@ -306,19 +306,19 @@ def artificial_diarisation_sample(
     while audio.shape[-1] / sr < seconds:
         # Pick a random speaker
         speaker: Speaker = random.choice(cur_speakers)
-        if last_speaker is not None and speaker.name == last_speaker.name and last_i + 1 < len(speaker.utts):
-            next_utt = join(CACHE_DIR, "chunks", last_speaker.utts[last_i + 1][1])
-            next_sample, ssr = torchaudio.load(next_utt)
-            next_sample = resample(sr, ssr, next_sample)
-            if (audio.shape[-1] + next_sample.shape[-1]) / sr > seconds:
-                if audio.shape[-1] == 0:
-                    continue
-                break
+        # if last_speaker is not None and speaker.name == last_speaker.name and last_i + 1 < len(speaker.utts):
+        #     next_utt = join(CACHE_DIR, "chunks", last_speaker.utts[last_i + 1][1])
+        #     next_sample, ssr = torchaudio.load(next_utt)
+        #     next_sample = resample(sr, ssr, next_sample)
+        #     if (audio.shape[-1] + next_sample.shape[-1]) / sr > seconds:
+        #         if audio.shape[-1] == 0:
+        #             continue
+        #         break
 
-            labels[-1][1] += next_sample.shape[-1] / sr
-            audio = torch.cat((audio, next_sample), dim=-1)
-            last_i += 1
-            continue
+        #     labels[-1][1] += next_sample.shape[-1] / sr
+        #     audio = torch.cat((audio, next_sample), dim=-1)
+        #     last_i += 1
+        #     continue
         
         if len(speaker.utts) < 3:
             cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
