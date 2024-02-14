@@ -310,7 +310,7 @@ def artificial_diarisation_sample(
             cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
             continue
 
-        last_i, random_sample_file = random.choice(speaker.utts)
+        last_i, random_sample_file = random.choice(speaker.utts)    
 
         random_sample_file = join(CACHE_DIR, "chunks", random_sample_file)
         
@@ -333,29 +333,34 @@ def artificial_diarisation_sample(
         int_range = min(
             interrupt_max, audio.shape[-1] / sr, random_sample.shape[-1] / sr
         )
+        sil_max = silence_max
 
-        if last_speaker.name == speaker.name:
+        if last_speaker is not None and last_speaker.name == speaker.name:
             int_range = 0
+            sil_max = 0
+            labels[-1][1] = audio.shape[-1] / sr+ random_sample.shape[-1] / sr
 
-        cut_point = int(random.uniform(-int_range, silence_max) * sr)
+        cut_point = int(random.uniform(-int_range, sil_max) * sr)
         start_label = audio.shape[-1] / sr + cut_point / sr
 
         padding = torch.zeros(1, random_sample.shape[-1] + cut_point)
         audio = torch.cat((audio, padding), dim=-1)
         audio[:, -random_sample.shape[-1] :] += random_sample
 
-        if speaker.name not in names:
-            i = len(names)
-            names.append(speaker.name)
-        else:
-            i = names.index(speaker.name)
+        
+        if last_speaker is None or last_speaker.name != speaker.name:
+            if speaker.name not in names:
+                i = len(names)
+                names.append(speaker.name)
+            else:
+                i = names.index(speaker.name)
 
-        name_label = chr(ord("A") + i)
+            name_label = chr(ord("A") + i)
 
-        labels.append(
-            [start_label, start_label + random_sample.shape[-1] / sr, name_label]
-        )
-        # Pick a random sample
+            labels.append(
+                [start_label, start_label + random_sample.shape[-1] / sr, name_label]
+            )
+            # Pick a random sample
         last_speaker = speaker
 
     return audio, labels
