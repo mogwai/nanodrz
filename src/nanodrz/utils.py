@@ -397,18 +397,20 @@ def find_nonsilence_chunks_vtrz(
     out = []
 
     cur_chunk = torch.zeros(1, 0, device=device)
-
+    
     for i, chunk in enumerate(silence.chunk(silence.shape[-1] // chunk_size, dim=-1)):
-        cur_chunk = torch.zeros(1, 0, device=device)
-        silence_padding = torch.ones(1, int(sr * min_silence_len), device=device)
-        chunk = torch.cat((silence_padding, chunk, silence_padding), dim=1)
-        conv_output = F.conv1d(chunk[None], kernel, stride=1, padding=kernel_size // 2)
-        idxs = (conv_output != kernel_size).int().flatten()
-        idxs = (idxs[1:] - idxs[:-1]).eq(1).nonzero().flatten()
+        silence_padding = torch.ones(1, kernel_size, device=device)
+        chunk = torch.cat((silence_padding, chunk, silence_padding), dim=-1)
+        conv_output = F.conv1d(chunk[None], kernel, stride=1)
+        idxs = (conv_output == kernel_size).int().flatten()
+        switches = idxs[:-1] - idxs[1:]
+        starts = switches.eq(1).nonzero().flatten()
+        ends = switches.eq(-1).nonzero().flatten()
 
-        shift = i*chunk_size
-        for j in range(len(idxs) - 1):
-            c = audio[:, shift+(idxs[j] - kernel_size // 2) : shift+(idxs[j + 1] - kernel_size // 2)]
+        shift = i * chunk_size
+
+        for s, e in zip(starts, ends):
+            c = audio[:, shift + s : shift + e]
             cur_chunk = torch.cat((cur_chunk, c), dim=-1)
             if (cur_chunk.shape[-1] / sr) > min_duration:
                 out.append(cur_chunk)
