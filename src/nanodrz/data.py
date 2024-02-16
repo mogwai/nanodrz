@@ -305,10 +305,6 @@ def artificial_diarisation_sample(
     while audio.shape[-1] / sr < seconds:
         # Pick a random speaker
         speaker: Speaker = random.choice(cur_speakers)
-        
-        if len(speaker.utts) < 3:
-            cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
-            continue
 
         last_i, random_sample_file = random.choice(speaker.utts)    
 
@@ -346,7 +342,6 @@ def artificial_diarisation_sample(
         padding = torch.zeros(1, random_sample.shape[-1] + cut_point)
         audio = torch.cat((audio, padding), dim=-1)
         audio[:, -random_sample.shape[-1] :] += random_sample
-
         
         if last_speaker is None or last_speaker.name != speaker.name:
             if speaker.name not in names:
@@ -360,7 +355,7 @@ def artificial_diarisation_sample(
             labels.append(
                 [start_label, start_label + random_sample.shape[-1] / sr, name_label]
             )
-            # Pick a random sample
+        
         last_speaker = speaker
 
     return audio, labels

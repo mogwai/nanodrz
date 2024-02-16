@@ -369,7 +369,7 @@ def find_nonsilence_chunks_vtrz(
     device: torch.device = "cuda",
     chunk_size: int = 60*16000,
 ) -> list[torch.Tensor]:
-    if audio.shape[-1] < sr * min_duration:
+    if audio.shape[-1] < sr * min_duration: 
         return [audio]
 
     if chunk_size is None:
@@ -577,9 +577,7 @@ def multimap(items: list, func: callable, workers=4, desc=None) -> list:
     """
     from tqdm.contrib.concurrent import process_map
 
-    print("multi", items, func)
     results = process_map(
         func, items, leave=False, desc=desc, max_workers=workers, total=len(items)
     )
-    print("multiend")
     return list(filter(lambda x: x is not None, results))
