@@ -52,7 +52,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     # Get Speakers
     speakers: list[Speaker] = []
-    print("build speakers")
+
     for ds in datacfg.synth_datasets:
         nspeakers = getattr(data, ds)()
         speakers += nspeakers
@@ -66,7 +66,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     delete.reverse()
     for d in delete:
         del speakers[d]
-    # assert len(set([s.name for s in speakers])) == len(speakers)
+
     print(
         f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
     )
@@ -114,9 +114,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         pin_memory=True,
         persistent_workers=datacfg.num_workers > 0,
     )
-
-    # We're not doing val yet
-    val_dl = train_dl
 
     betas = tuple(train.betas)
     optimizer = model.configure_optimizers(
@@ -284,43 +281,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                     step=step,
                 )
 
-            if train.do_val and step % train.val_every == 0:
-                model.eval()
-                val_dl.seed(config.seed)
-
-                val_loss = torch.tensor(0.0, device=device)
-                val_steps = 0
-
-                val_start = time.perf_counter()
-
-                with torch.no_grad():
-                    for val_batch in val_dl:
-                        val_batch = to_device(val_batch, device)
-
-                        with torch.amp.autocast(
-                            enabled=True, device_type=device_type, dtype=dtype
-                        ):
-                            out = model(**val_batch)
-                            loss = out["loss"]
-                            val_loss = val_loss + loss
-
-                        val_steps += 1
-
-                val_loss = reduce_tensor(val_loss, world_size) / val_steps
-
-                val_end = time.perf_counter()
-
-                val_duration = val_end - val_start
-
-                print(f"{device=} val took {val_duration:.2f}s for {val_steps} steps")
-
-                wandb_log(
-                    {"val/loss": val_loss.item(), "val/duration": val_duration},
-                    step=step,
-                )
-
-                model.train()
-
             if step % train.checkpoint_every == 0 and is_main_process:
                 # Evaluation
                 batch = next(train_dl_iter)
@@ -385,7 +345,6 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
 @click.command()
 @click.argument("config", type=str, default=None, required=False)
-@click.option("--edit", is_flag=True, help="Edit the config before running")
 @click.option(
     "--dev",
     is_flag=True,
@@ -399,19 +358,18 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     "--watch",
     is_flag=True,
 )
-def _click_main(config: str, edit: bool, dev: bool, profile: bool, watch: bool):
-    main(config, edit, dev, profile, watch)
+def _click_main(config: str, dev: bool, profile: bool, watch: bool):
+    main(config, dev, profile, watch)
 
-
+# Allows programatic training
 def main(
     config: str | Config,
-    edit: bool = False,
     dev: bool = False,
     profile: bool = False,
     watch: bool = False,
     name: str = "",
 ):
-    config: Config = load_config(config, edit)
+    config: Config = load_config(config)
 
     config.train.torch_profile = config.train.torch_profile or profile
     config.train.wandb_watch = config.train.wandb_watch or watch

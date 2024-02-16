@@ -40,8 +40,6 @@ class DataConfig(BaseModel):
 
     synth_datasets: list[str] = ["libritts_test"]
 
-    # scramble_labels =
-
 
 class FlashConfig(BaseModel):
     enable_flash: bool = False
@@ -104,11 +102,10 @@ class Config(BaseModel):
     run_dir: str | None = None
 
 
-def load_config(config: str | Config, edit: bool) -> Config:
+def load_config(config: str | Config) -> Config:
     assert (
         os.getenv("WANDB_API_KEY") is not None
     ), "Please make sure you have set your `WANDB_API_KEY`"
-
 
     if type(config) is str:
         if "http" in config:
@@ -124,11 +121,6 @@ def load_config(config: str | Config, edit: bool) -> Config:
 
     config.run_dir = os.path.join(RUN_DIR, str(int(time.time())))
     os.makedirs(config.run_dir, exist_ok=True)
-
-    if edit:
-        edited = click.edit(yaml.dump(config.dict()))
-        if edited is not None:
-            config = Config(**yaml.safe_load(edited))
 
     return config
 

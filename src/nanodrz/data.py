@@ -4,6 +4,7 @@ import itertools
 import os
 import random
 from dataclasses import dataclass
+import nanodrz.augmentations as augs
 
 from tqdm import tqdm
 from os.path import expanduser, join, basename
@@ -56,7 +57,6 @@ class DiarizationDataset(IterableDataset):
         self.min_secs = min_seconds
         self.max_secs = max_secs
 
-    # Return the wav and
     def __iter__(self):
         while True:
             i = random.choice(self.rttm_files)
@@ -72,10 +72,9 @@ class DiarizationDataset(IterableDataset):
             # Make sure we're in order
             labels.sort(key=lambda x: x[0])
 
-            # We need to cut the audio to fit out batch size
+            # We need to cut the audio to fit in our max seconds
             secs = wav.shape[-1] / self.sr
             duration = random.uniform(self.min_secs, min(self.max_secs, secs))
-            print("duration", duration)
             assert secs > self.min_secs
 
             start = 0
@@ -99,7 +98,7 @@ class DiarizationDataset(IterableDataset):
             # Adjust timings
             labels = [[l[0] - start, l[1] - start, l[2]] for l in labels]
 
-            # Apparently the best way to make sure the model generalises
+            # PIX2Seq said this was best
             random.shuffle(labels)
 
             yield wav, labels
@@ -110,9 +109,20 @@ class DiarizationDataset(IterableDataset):
 
 def collate_fn(model: DiarizeGPT) -> callable:
     cfg = model.config
+    dcfg = model.config.data
+    sr = model.config.model.sample_rate
+
+    augment = augs.build_augmentations(
+        [
+            (augs.AdjustSpeed(sr, dcfg.max_secs), 0.2),
+            (augs.RandPitchShift(sr), 0.2),
+            (augs.SinVol(sr), 0.2),
+            (augs.AddNoise(), 0.2),
+        ]
+    )
 
     def _collate(batch):
-        audios = [b[0] for b in batch]
+        audios = [augment(b[0]) for b in batch]
         audio_lengths = torch.tensor([a.shape[-1] for a in audios])
 
         if cfg.model.audio_encode == "mel":
@@ -152,7 +162,6 @@ def gather_speakers_from_folder(
     folder: str,
     retrieve_speaker: callable,
     exts: list[str] = ["wav", "opus", "mp3", "flac"],
-    file_filters: list[callable] = [],
     split_silence: bool = True,
 ):
     """
@@ -365,10 +374,6 @@ def artificial_diarisation_sample(
         last_speaker = speaker
 
     return audio, labels
-
-
-def min_duration(min_secs: int = 0.1) -> callable:
-    return lambda utt: utt.seconds > min_secs
 
 
 if __name__ == "__main__":
