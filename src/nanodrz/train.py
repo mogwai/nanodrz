@@ -62,7 +62,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     for i in range(len(speakers)):
         if len(speakers[i].utts) < 3:
             delete.append(i)
-    
+
     delete.reverse()
     for d in delete:
         del speakers[d]
@@ -86,6 +86,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     model = Model(config).cuda(rank)
 
+    # Our synthetic data backbone
     ds = GeneratorIterableDataset(
         data.artificial_drz_generator(
             model,
@@ -94,6 +95,16 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
             **datacfg.model_dump(),
         )
     )
+
+    # Real data
+    real_ds = data.DiarizationDataset(
+        "/home/harry/.cache/nanodrz/voxconverse-dev",
+        sr=model.config.model.sample_rate,
+        max_secs=datacfg.max_secs,
+        min_seconds=datacfg.min_secs,
+    )
+
+    ds = torch.utils.data.ChainDataset([real_ds, ds])
 
     train_dl = DataLoader(
         ds,

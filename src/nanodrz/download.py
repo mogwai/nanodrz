@@ -61,26 +61,37 @@ def dl_scp_file(link: str):
 def dl_http_file(link: str):
     file_path = path.join(CACHE_DIR, path.basename(link))
 
-    if not os.path.exists(file_path):
-        with request.urlopen(link) as response, open(file_path, "wb") as file:
-            total_size = int(response.headers.get("content-length", 0))
-            block_size = 1024 * 1024
-            progress_bar = tqdm(
-                total=total_size,
-                desc=link,
-                unit="B",
-                unit_scale=True,
-                leave=False,
-            )
+    current_size = 0
+    expected_size = int(request.urlopen(link).headers.get("content-length", 0))
+    
+    if os.path.exists(file_path):
+        current_size = os.path.getsize(file_path)
 
-            while True:
-                data = response.read(block_size)
-                if not data:
-                    break
-                progress_bar.update(len(data))
-                file.write(data)
+        if current_size == expected_size:
+            return file_path
 
-            progress_bar.close()
+    headers = {"Range": f"bytes={current_size}-"}
+    req = request.Request(link, headers=headers)
+
+    with request.urlopen(req) as response, open(file_path, "ab") as file:
+        block_size = 1024 * 1024
+        progress_bar = tqdm(
+            total=expected_size - current_size,  # Adjust total size
+            initial=current_size,
+            desc=link,
+            unit="B",
+            unit_scale=True,
+            leave=False,
+        )
+
+        while True:
+            data = response.read(block_size)
+            if not data:
+                break
+            progress_bar.update(len(data))
+            file.write(data)
+
+        progress_bar.close()
 
     return file_path
 

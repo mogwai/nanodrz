@@ -1,6 +1,6 @@
 train:
   gpus: 1
-  checkpoint: /home/harry/runs/nanodrz/1706953646/0030000.pt
+  # checkpoint: /home/harry/runs/nanodrz/1706953646/0030000.pt
   continue_from_checkpoint: false
   total_steps: 15_000
   max_lr: 1e-4
@@ -19,5 +19,5 @@ data:
   interrupt_max: 2
   num_speakers: 6
   synth_datasets:
-    - librilight_medium
+    # - librilight_medium
     - librilight_small

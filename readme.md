@@ -86,6 +86,10 @@ https://fluxions.notion.site/nanodrz-Experiment-Log-acea3d5f436949b68e1f5a520c8c
 
 I've chosen a strong copy left license for now because I want to get people giving back to this project.
 
+# Reference
+
+https://arxiv.org/pdf/2310.13025.pdf
+
 # Credits
 
 [James Parsloe](https://github.com/jamesparsloe) for project structure and lots of the utils found here.

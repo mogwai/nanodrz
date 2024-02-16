@@ -49,50 +49,60 @@ class GeneratorIterableDataset(IterableDataset):
         return iter(self.generator)
 
 
-class DiarizationDataset(Dataset):
+class DiarizationDataset(IterableDataset):
     def __init__(self, folder, sr=16000, max_secs=30, min_seconds=10):
         self.sr = sr
         self.rttm_files = glob.glob(os.path.join(folder, "*.rttm"))
-        self.min_secs = min_seconds * sr
-        self.max_secs = max_secs * sr
+        self.min_secs = min_seconds
+        self.max_secs = max_secs
 
     # Return the wav and
-    def __getitem__(self, i):
-        i = self.rttm_files[i]
-        wav = i.replace(".rttm", ".wav")
-        wav, sr = torchaudio.load(wav)
-        wav = resample(sr, self.sr, wav)
+    def __iter__(self):
+        while True:
+            i = random.choice(self.rttm_files)
+            wav = i.replace(".rttm", ".wav")
+            wav, sr = torchaudio.load(wav)
+            wav = resample(sr, self.sr, wav)
 
-        with open(i, "r") as file:
-            rttm = file.read()
+            with open(i, "r") as file:
+                rttm = file.read()
 
-        labels = formats.convert_rttm(rttm)
+            labels = formats.convert_rttm(rttm)
 
-        # Make sure we're sorting by
-        labels.sort(key=lambda x: x[0])
+            # Make sure we're in order
+            labels.sort(key=lambda x: x[0])
 
-        # We need to cut the audio to fit out batch size
-        secs = wav.shape[-1]
-        duration = random.randint(self.min_secs, min(self.max_secs, secs))
-        assert secs > self.min_secs
+            # We need to cut the audio to fit out batch size
+            secs = wav.shape[-1] / self.sr
+            duration = random.uniform(self.min_secs, min(self.max_secs, secs))
+            print("duration", duration)
+            assert secs > self.min_secs
 
-        start = 0
-        end = 0
+            start = 0
+            end = 0
 
-        start = random.randint(0, secs - duration)
-        end = start + duration
-        wav = wav[:, start:end]
+            start = random.uniform(0, secs - duration)
+            end = start + duration
+            wav = wav[:, int(start * self.sr) : int(end * self.sr)]
 
-        labels = list(
-            filter(
-                lambda x: x[0] * 16000 < end or x[1] * 16000 > start,
-                labels,
+            labels = list(
+                filter(
+                    lambda x: (x[0] > start and x[0] < end)
+                    or (x[1] > start and x[1] < end)
+                    or (x[0] < start and x[1] > end),
+                    labels,
+                )
             )
-        )
 
-        # Clip the labels
-        labels = [[max(l[0], start), min(l[1], end), l[2]] for l in labels]
-        return wav, labels
+            # Clip the labels
+            labels = [[max(l[0], start), min(l[1], end), l[2]] for l in labels]
+            # Adjust timings
+            labels = [[l[0] - start, l[1] - start, l[2]] for l in labels]
+
+            # Apparently the best way to make sure the model generalises
+            random.shuffle(labels)
+
+            yield wav, labels
 
     def __len__(self):
         return len(self.rttm_files)
@@ -204,7 +214,6 @@ def libritts_dev(split_silence=True) -> list[Speaker]:
     )
 
 
-
 def librilight_small(split_silence=True) -> list[Speaker]:
     folder = download.dl_libri_light_small()
     return gather_speakers_from_folder(
@@ -306,10 +315,10 @@ def artificial_diarisation_sample(
         # Pick a random speaker
         speaker: Speaker = random.choice(cur_speakers)
 
-        last_i, random_sample_file = random.choice(speaker.utts)    
+        last_i, random_sample_file = random.choice(speaker.utts)
 
         random_sample_file = join(CACHE_DIR, "chunks", random_sample_file)
-        
+
         try:
             random_sample, ssr = torchaudio.load(random_sample_file)
         except Exception as e:
@@ -333,8 +342,6 @@ def artificial_diarisation_sample(
 
         if last_speaker is not None and last_speaker.name == speaker.name:
             int_range = 0
-            sil_max = 0
-            labels[-1][1] = audio.shape[-1] / sr+ random_sample.shape[-1] / sr
 
         cut_point = int(random.uniform(-int_range, sil_max) * sr)
         start_label = audio.shape[-1] / sr + cut_point / sr
@@ -342,20 +349,19 @@ def artificial_diarisation_sample(
         padding = torch.zeros(1, random_sample.shape[-1] + cut_point)
         audio = torch.cat((audio, padding), dim=-1)
         audio[:, -random_sample.shape[-1] :] += random_sample
-        
-        if last_speaker is None or last_speaker.name != speaker.name:
-            if speaker.name not in names:
-                i = len(names)
-                names.append(speaker.name)
-            else:
-                i = names.index(speaker.name)
 
-            name_label = chr(ord("A") + i)
+        if speaker.name not in names:
+            i = len(names)
+            names.append(speaker.name)
+        else:
+            i = names.index(speaker.name)
 
-            labels.append(
-                [start_label, start_label + random_sample.shape[-1] / sr, name_label]
-            )
-        
+        name_label = chr(ord("A") + i)
+
+        labels.append(
+            [start_label, start_label + random_sample.shape[-1] / sr, name_label]
+        )
+
         last_speaker = speaker
 
     return audio, labels
