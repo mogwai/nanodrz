@@ -75,7 +75,6 @@ class DiarizationDataset(IterableDataset):
             # We need to cut the audio to fit out batch size
             secs = wav.shape[-1] / self.sr
             duration = random.uniform(self.min_secs, min(self.max_secs, secs))
-            print("duration", duration)
             assert secs > self.min_secs
 
             start = 0
@@ -308,10 +307,8 @@ def artificial_diarisation_sample(
     cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
     seconds = random.uniform(min_secs, max_secs - 1)
     last_speaker = None
-    # While we're still less than the target secs
-    last_i = None
 
-    while audio.shape[-1] / sr < seconds:
+    for i in range(20): 
         # Pick a random speaker
         speaker: Speaker = random.choice(cur_speakers)
 
