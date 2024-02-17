@@ -112,18 +112,8 @@ def collate_fn(model: DiarizeGPT) -> callable:
     dcfg = model.config.data
     sr = model.config.model.sample_rate
 
-    augment = augs.build_augmentations(
-        [
-            # (augs.AdjustSpeed(sr, dcfg.max_secs).eval(), 0.2),
-            # (augs.RandPitchShift(sr).eval(), 0.2),
-            (augs.SinVol(sr).eval(), 0.2),
-            (augs.AddNoise().eval(), 0.2),
-        ]
-    )
-
     def _collate(batch):
-        with torch.inference_mode():
-            audios = [augment(b[0]) for b in batch]
+        audios = [b[0] for b in batch]
         audio_lengths = torch.tensor([a.shape[-1] for a in audios])
 
         if cfg.model.audio_encode == "mel":
@@ -319,7 +309,7 @@ def artificial_diarisation_sample(
     seconds = random.uniform(min_secs, max_secs - 1)
     last_speaker = None
 
-    for i in range(20): 
+    for i in range(20):
         # Pick a random speaker
         speaker: Speaker = random.choice(cur_speakers)
 
