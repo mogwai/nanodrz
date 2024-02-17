@@ -96,15 +96,15 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
         )
     )
 
-    # Real data
-    real_ds = data.DiarizationDataset(
-        "/home/harry/.cache/nanodrz/voxconverse-dev",
-        sr=model.config.model.sample_rate,
-        max_secs=datacfg.max_secs,
-        min_seconds=datacfg.min_secs,
-    )
+    # # Real data
+    # real_ds = data.DiarizationDataset(
+    #     "/home/harry/.cache/nanodrz/voxconverse-dev",
+    #     sr=model.config.model.sample_rate,
+    #     max_secs=datacfg.max_secs,
+    #     min_seconds=datacfg.min_secs,
+    # )
 
-    ds = torch.utils.data.ChainDataset([real_ds, ds])
+    # ds = torch.utils.data.ChainDataset([real_ds, ds])
 
     train_dl = DataLoader(
         ds,
