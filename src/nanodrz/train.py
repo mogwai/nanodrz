@@ -17,6 +17,7 @@ from nanodrz.data import GeneratorIterableDataset, collate_fn, Speaker
 from nanodrz.model import DiarizeGPT as Model
 from nanodrz import optim, download
 from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
+from nanodrz.augmentations import denoise
 from pyannote.metrics.diarization import DiarizationErrorRate
 from nanodrz import format_conversions as format
 
@@ -67,6 +68,9 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     for d in delete:
         del speakers[d]
 
+
+    for s in speakers:
+            
     print(
         f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
     )

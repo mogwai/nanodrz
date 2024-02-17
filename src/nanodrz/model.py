@@ -45,7 +45,7 @@ class DiarizeGPT(Module):
         self.pad_idx = 0
         self.text_emb = nn.Embedding(self.num_embs, dmodel)
 
-        self.text_head = nn.Linear(dmodel, self.num_embs)
+        self.text_head = nn.Linear(dmodel, self.num_embs, bias=modelcfg.bias)
 
         # Load DAC
         model_path = dac.utils.download(model_type=modelcfg.dac_model)

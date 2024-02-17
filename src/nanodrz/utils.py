@@ -310,6 +310,16 @@ def cache(location=".cache") -> callable:
     return inner_function
 
 
+def contains_non_silence(audio, sr=16000, min_duration=.2, threshold=.1) -> bool:
+    audio = audio < threshold
+    kernel_size = int(min_duration*sr)
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+    kernel = torch.ones(1, kernel_size)
+    
+    out = F.conv1d(audio, kernel, paddig=kernel_size//2)
+    return (out == kernel_size).any()
+
 @cache(os.path.join(CACHE_DIR, "find_nonsilence"))
 def find_nonsilence_chunks(
     audio_file: str,

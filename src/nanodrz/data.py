@@ -13,7 +13,7 @@ import torch
 import torchaudio
 
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import IterableDataset, Dataset
+from torch.utils.data import IterableDataset
 
 
 from nanodrz import download
@@ -114,15 +114,16 @@ def collate_fn(model: DiarizeGPT) -> callable:
 
     augment = augs.build_augmentations(
         [
-            (augs.AdjustSpeed(sr, dcfg.max_secs), 0.2),
-            (augs.RandPitchShift(sr), 0.2),
-            (augs.SinVol(sr), 0.2),
-            (augs.AddNoise(), 0.2),
+            # (augs.AdjustSpeed(sr, dcfg.max_secs).eval(), 0.2),
+            # (augs.RandPitchShift(sr).eval(), 0.2),
+            (augs.SinVol(sr).eval(), 0.2),
+            (augs.AddNoise().eval(), 0.2),
         ]
     )
 
     def _collate(batch):
-        audios = [augment(b[0]) for b in batch]
+        with torch.inference_mode():
+            audios = [augment(b[0]) for b in batch]
         audio_lengths = torch.tensor([a.shape[-1] for a in audios])
 
         if cfg.model.audio_encode == "mel":

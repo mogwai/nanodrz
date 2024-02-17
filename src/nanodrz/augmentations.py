@@ -2,7 +2,8 @@ import torchaudio.transforms as tfms
 import random
 import torch
 from torch.nn import Module, ModuleList
-
+from nanodrz.utils import cache, CACHE_DIR
+from os.path import join
 
 class AdjustSpeed(Module):
     def __init__(self, sr=16000, max_seconds=30, max_speed=1.2, min_speed=0.8):
@@ -16,7 +17,6 @@ class AdjustSpeed(Module):
         secs = audio.shape[-1] / self.sr
         max_slow = secs / self.max_seconds
         speed_factor = random.uniform(max(max_slow, self.min_speed), self.max_speed)
-        print(max_slow, speed_factor)
         return tfms.Speed(self.sr, speed_factor)(audio)[0]
 
 
@@ -55,12 +55,25 @@ class AddNoise(Module):
         audio = audio + torch.rand_like(audio) * random.uniform(0.01, 0.2)
         return audio.clamp(-1, 1)
 
+@torch.inference_mode()
+def denoise(denoiser, audio_file, sr=None):    
+    audio = audio.sum(dim=0, keepdim=True)
+    # audio = resample(sr, denoiser.sample_rate, audio)
+    B = 40
+    denoiser = denoiser.cuda()
+    wav = audio.split(B*denoiser.sample_rate, dim=1)
+    denoised = []
+    for w in wav:
+        denoised.append(denoiser(w.cuda()))
+    denoiser = denoiser.cpu()
+    denoised = torch.cat(denoised, dim=-1)
+    return denoised
+
 
 def build_augmentations(augmentations: list[tuple[Module, float]]):
     def _inner(audio):
         for aug, chance in augmentations:
             if random.random() < chance:
-                print(aug)
                 audio = aug(audio)
 
         return audio
