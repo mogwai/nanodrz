@@ -68,9 +68,15 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
     for d in delete:
         del speakers[d]
 
-
     for s in speakers:
-            
+        # Convert paths to denoised
+        for i in range(len(s.utts)):
+            f = s.utts[i][1]
+            fsplit = f.split("/")
+            fsplit[-1] = fsplit[-1].replace(".flac", "_d.wav")
+            f = "/".join(fsplit)
+            s.utts[i] = f
+
     print(
         f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
     )
@@ -364,6 +370,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 )
 def _click_main(config: str, dev: bool, profile: bool, watch: bool):
     main(config, dev, profile, watch)
+
 
 # Allows programatic training
 def main(

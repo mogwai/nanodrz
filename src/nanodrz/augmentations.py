@@ -56,9 +56,8 @@ class AddNoise(Module):
         return audio.clamp(-1, 1)
 
 @torch.inference_mode()
-def denoise(denoiser, audio_file, sr=None):    
+def denoise(denoiser, audio, sr):    
     audio = audio.sum(dim=0, keepdim=True)
-    # audio = resample(sr, denoiser.sample_rate, audio)
     B = 40
     denoiser = denoiser.cuda()
     wav = audio.split(B*denoiser.sample_rate, dim=1)
