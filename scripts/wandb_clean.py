@@ -8,11 +8,11 @@ api = wandb.Api()
 runs:list[Run] = api.runs(entity_project)
 
 for run in runs:
-    if not len(run.summary.keys()):
+    if run.name == "dev":
         run.delete()
         continue
 
-    if run.name == "dev":
+    if not len(run.summary.keys()):
         run.delete()
         continue
     
