@@ -3,7 +3,7 @@ import glob
 import itertools
 import os
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import nanodrz.augmentations as augs
 
 from tqdm import tqdm
@@ -22,24 +22,8 @@ from nanodrz.constants import CACHE_DIR
 from nanodrz.utils import resample, find_nonsilence_chunks, multimap
 from nanodrz import format_conversions as formats
 from tqdm import tqdm
+from dataclasses import field
 
-
-@dataclass
-class Utterance:
-    file_url: str | None = None
-    seconds: float | None = None
-    sr: int | None = None
-
-
-@dataclass
-class Speaker:
-    # Audio samples
-    name: str | None = None
-    # Change this to a list of files
-    utts: list[str] | None = None
-
-    def __repr__(self):
-        return self.name
 
 
 class GeneratorIterableDataset(IterableDataset):
@@ -197,7 +181,7 @@ def gather_speakers_from_folder(
     return list(speakers.values())
 
 
-def libritts_test() -> list[Speaker]:
+def libritts_test() -> list:
     folder = download.dl_libritts_test()
     return gather_speakers_from_folder(
         folder,
@@ -205,7 +189,7 @@ def libritts_test() -> list[Speaker]:
     )
 
 
-def libritts_dev(split_silence=True) -> list[Speaker]:
+def libritts_dev(split_silence=True) -> list:
     folder = download.dl_libritts_dev()
     return gather_speakers_from_folder(
         folder,
@@ -214,7 +198,7 @@ def libritts_dev(split_silence=True) -> list[Speaker]:
     )
 
 
-def librilight_small(split_silence=True) -> list[Speaker]:
+def librilight_small(split_silence=True) -> list:
     folder = download.dl_libri_light_small()
     return gather_speakers_from_folder(
         folder,
@@ -223,7 +207,7 @@ def librilight_small(split_silence=True) -> list[Speaker]:
     )
 
 
-def librilight_medium() -> list[Speaker]:
+def librilight_medium() -> list:
     folder = download.dl_libri_light_medium()
     return gather_speakers_from_folder(
         folder,
@@ -231,7 +215,7 @@ def librilight_medium() -> list[Speaker]:
     )
 
 
-def librilight_large() -> list[Speaker]:
+def librilight_large() -> list:
     folder = download.dl_libri_light_large()
     return gather_speakers_from_folder(
         folder,
@@ -260,7 +244,7 @@ def voxconverse_dev(
 
 def artificial_drz_generator(
     model: torch.nn.Module,
-    speakers: list[Speaker] = None,
+    speakers: dict = None,
     sr=16000,
     max_secs=30,
     **kwargs,
@@ -286,87 +270,99 @@ def artificial_drz_generator(
 
 
 def artificial_diarisation_sample(
-    speakers: list[Speaker] = None,
+    speakers: dict[str] = None,
     max_secs=30,
     min_secs=7.5,
-    interrupt_max=0.2,
+    interrupt_max=1,
     silence_max=0.2,
-    num_speakers=4,
+    num_speakers=3,
     sr=16000,
     **kwargs,
 ):
-    """
-    TODO this method could be a lot smarter, finding chunks that actually fit with a querable
-    tts dataset.
-    """
-    if speakers is None:
-        speakers = libritts_dev()
-
+    keys = list(speakers.keys())
     audio = torch.zeros(1, 0)
     names, labels = [], []
 
-    cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
+    cur_speakers = random.sample(keys, k=random.randint(2, num_speakers))
     seconds = random.uniform(min_secs, max_secs - 1)
+
     last_speaker = None
 
     for i in range(20):
         # Pick a random speaker
-        speaker: Speaker = random.choice(cur_speakers)
+        speaker: str = random.choice(cur_speakers)
 
-        last_i, random_sample_file = random.choice(speaker.utts)
+        cur_len = audio.shape[-1] / sr
 
-        random_sample_file = join(CACHE_DIR, "chunks", random_sample_file)
-
-        try:
-            random_sample, ssr = torchaudio.load(random_sample_file)
-        except Exception as e:
-            print(e)
-            cur_speakers = random.sample(speakers, k=random.randint(2, num_speakers))
-            continue
-
-        random_sample = resample(sr, ssr, random_sample)
-
-        if (audio.shape[-1] + random_sample.shape[-1]) / sr > seconds:
-            if audio.shape[-1] == 0:
-                continue
+        if seconds - cur_len < 1:
             break
 
-        random_sample = random_sample.sum(dim=0)[None]
+        if speaker == last_speaker:
+            continue
 
-        int_range = min(
-            interrupt_max, audio.shape[-1] / sr, random_sample.shape[-1] / sr
-        )
-        sil_max = silence_max
+        inter = -interrupt_max
+        if i == 0:
+            inter = 0
 
-        if last_speaker is not None and last_speaker.name == speaker.name:
-            int_range = 0
+        intpad = random.uniform(max(-cur_len + 1, inter), silence_max)
+        # We might not have a sample of this length or
+        max_sample_len = seconds - cur_len + intpad
 
-        cut_point = int(random.uniform(-int_range, sil_max) * sr)
-        start_label = audio.shape[-1] / sr + cut_point / sr
+        max_sample_len = max(max_sample_len, 1)
 
-        padding = torch.zeros(1, random_sample.shape[-1] + cut_point)
+        utts = speakers[speaker]
+        max_sample_len = min(max([x.length for x in utts]), max_sample_len * sr)
+
+        # What is our smallest segment potential
+        sample_len = int(random.uniform(0.5 * sr, max_sample_len))
+
+        # Pick a utterance that is as long as this or longer
+        utts = list(filter(lambda x: x.length > sample_len, speakers[speaker]))
+        utt = random.choice(utts)
+
+        # Choose a random start point that gives space for the length
+        # pick a segment starting with speech
+        starts, ends = list(zip(*utt.segments))
+        starts = [s for s in starts if s < (utt.length - sample_len)]
+        start = random.choice(starts)
+
+        try:
+            end = [e for e in ends if e < (start + sample_len) and e > start][-1]
+        except Exception as e:
+            continue
+
+        sample = torchaudio.load(
+            utt.file,
+            backend="soundfile",
+        )[
+            0
+        ][:, start:end]
+
+        padding = torch.zeros(1, max(0, sample.shape[-1] + int(intpad * sr)))
         audio = torch.cat((audio, padding), dim=-1)
-        audio[:, -random_sample.shape[-1] :] += random_sample
+        audio[:, -sample.shape[-1] :] += sample
 
-        if speaker.name not in names:
+        # Derive the labels from the segment labels
+        nlabels = [s for s in utt.segments if s[0] >= start and s[1] <= end]
+
+        if speaker not in names:
             i = len(names)
-            names.append(speaker.name)
+            names.append(speaker)
         else:
-            i = names.index(speaker.name)
+            i = names.index(speaker)
 
         name_label = chr(ord("A") + i)
 
-        labels.append(
-            [start_label, start_label + random_sample.shape[-1] / sr, name_label]
-        )
-
+        # Need to at the cut points and minus the start
+        labels += [
+            [
+                # Length - start +/- intpad - relative_start
+                (cur_len * sr + s[0] + intpad * sr - start) / sr,
+                (cur_len * sr + s[1] + intpad * sr - start) / sr,
+                name_label,
+            ]
+            for s in nlabels
+        ]
         last_speaker = speaker
-
+    audio = audio.clamp(-1, 1)
     return audio, labels
-
-
-if __name__ == "__main__":
-    device = torch.device("cuda:1")
-    torch.cuda.set_device(device)
-    speakers = librilight_medium()
-    sample, labels = artificial_diarisation_sample(speakers)

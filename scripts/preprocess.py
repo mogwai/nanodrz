@@ -46,13 +46,6 @@ files = glob("/home/harry/.cache/nanodrz/**/*.flac", recursive=True)
 denoiser = pretrained.dns64().cuda().eval()
 
 
-@dataclass
-class Utterance:
-    file: str
-    speaker: str
-    segements: list[tuple[int, int]] = field(default_factory=lambda: [])
-
-
 _, utils = torch.hub.load(
     repo_or_dir="snakers4/silero-vad", model="silero_vad", force_reload=True, onnx=False
 )
@@ -84,9 +77,11 @@ def vad_save(f):
     vad = vad_models[pid]
     speech_timestamps = get_speech_timestamps(audio, vad, sampling_rate=sr)
     utt = Utterance(file=f, speaker=f.split("/")[-3])
-    utt.segements = [(s["start"], s["end"]) for s in speech_timestamps]
+    utt = {}
+    utt["file"] = f
+    utt["speaker"] = f.split("/")[-3]
+    utt["segments"] = [(s["start"], s["end"]) for s in speech_timestamps]
     torch.save(utt, p)
-    print(p)
     return p
 
 

@@ -4,12 +4,12 @@ train:
   continue_from_checkpoint: false
   total_steps: 14_000
   max_lr: 1e-4
-  batch_size: 48
+  batch_size: 16
   flash:
     enable_flash: true
-  grad_acc_steps: 2
+  grad_acc_steps: 4
 model:
-  num_embs: 512
+  num_embs: 256
   dmodel: 1536
   layers: 12
   audio_encode: mel

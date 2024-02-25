@@ -1,4 +1,7 @@
 import os
+from os import path
+from glob import glob
+import json
 import time
 from contextlib import nullcontext
 
@@ -10,16 +13,29 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 
+from dataclasses import dataclass, field
 import wandb
 from nanodrz import data, utils, download
+from nanodrz.constants import CACHE_DIR
 from nanodrz.config import Config, load_config
-from nanodrz.data import GeneratorIterableDataset, collate_fn, Speaker
+from nanodrz.data import GeneratorIterableDataset, collate_fn
 from nanodrz.model import DiarizeGPT as Model
 from nanodrz import optim, download
 from nanodrz.utils import count_parameters, reduce_tensor, seed_all, to_device
 from nanodrz.augmentations import denoise
 from pyannote.metrics.diarization import DiarizationErrorRate
 from nanodrz import format_conversions as format
+
+
+@dataclass
+class Utterance:
+    file: str
+    speaker: str
+    segments: list[tuple[int, int]] = field(default_factory=lambda: [])
+
+    @property
+    def length(self):
+        return self.segments[-1][-1]
 
 
 def train(rank: int, world_size: int, config: Config, dev: bool = False):
@@ -51,34 +67,24 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
             name="dev" if dev else None,
         )
 
-    # Get Speakers
-    speakers: list[Speaker] = []
+    paths = glob(path.join(CACHE_DIR, "jsonutts", "*"))
+    utts = [json.load(open(p)) for p in paths]
+    speakers = {}
 
-    for ds in datacfg.synth_datasets:
-        nspeakers = getattr(data, ds)()
-        speakers += nspeakers
-        print(ds, len(nspeakers))
+    for u, p in zip(utts, paths):
+        spk = u["speaker"]
+        if spk not in speakers:
+            speakers[spk] = []
+        del u["length"]
+        speakers[spk].append(Utterance(**u))
 
-    delete = []
-    for i in range(len(speakers)):
-        if len(speakers[i].utts) < 3:
-            delete.append(i)
-
-    delete.reverse()
-    for d in delete:
-        del speakers[d]
-
-    for s in speakers:
-        # Convert paths to denoised
-        for i in range(len(s.utts)):
-            f = s.utts[i][1]
-            fsplit = f.split("/")
-            fsplit[-1] = fsplit[-1].replace(".flac", "_d.wav")
-            f = "/".join(fsplit)
-            s.utts[i] = f
+    for s in speakers.keys():
+        utts: list = speakers[s]
+        utts.sort(key=lambda x: x.length)
+        speakers[s] = utts
 
     print(
-        f"Speakers: {len(speakers)} Effective BS: {B*world_size*train.grad_acc_steps}"
+        f"Speakers: {len(speakers.keys())} Effective BS: {B*world_size*train.grad_acc_steps}"
     )
 
     seed_all(config.seed)
@@ -96,7 +102,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
     model = Model(config).cuda(rank)
 
-    # Our synthetic data backbone
+    # Synthetic Diarization Data
     ds = GeneratorIterableDataset(
         data.artificial_drz_generator(
             model,
