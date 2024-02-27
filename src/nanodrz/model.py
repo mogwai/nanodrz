@@ -14,6 +14,26 @@ from functools import partial
 import dac
 import torch
 
+def dequantize(max_secs, num_time_tokens, time):
+    return (time - 2) * max_secs / num_time_tokens
+
+
+def check_valid_label(token_so_far) -> bool:
+    triplets = token_so_far.split(3).tolist()
+    last_label = triplets[-1]
+    start, end, cls = last_label
+
+    # same class
+    triplets = filter(lambda x: x[2] == cls, triplets)
+
+    for lab in triplets[:-1]:
+        # Not intersecting.
+        if (start > lab[0] and start > lab[1]) or end < lab[0] or lab[1]:
+            continue
+        
+
+
+
 
 class DiarizeGPT(Module):
     """
@@ -297,25 +317,28 @@ class DiarizeGPT(Module):
             latents = self.decoder(emb)[:, [-1], :]
             logits = self.text_head(latents)
 
+            min_value = torch.finfo(logits.dtype).min
+
             # We never want to predict the padding token
-            logits[..., 0] = torch.finfo(logits.dtype).min
+            logits[..., 0] = min_value
 
             # We know that we're predicting start, end, label
             # So we can make eos and label no predictable
             if step % 3 != 0 or step == 0:
                 # Prevent EOS
-                logits[..., 1] = torch.finfo(logits.dtype).min
+                logits[..., 1] = min_value
 
             class_pred_step = (step - 2) % 3 == 0
 
             # Class prediction steps
             if class_pred_step:
-                logits[..., : -self.num_classes] = torch.finfo(logits.dtype).min
+                logits[..., : -self.num_classes] = min_value
             else:
                 # Prevent class prediction
-                logits[..., -self.num_classes :] = torch.finfo(logits.dtype).min
+                logits[..., -self.num_classes :] = min_value
 
             probs = F.softmax(logits / temperature, dim=-1)
+
             eos_probs = probs[..., self.eos_idx]
             if torch.any(eos_probs > 0.1):
                 print(f"{eos_probs=} greater than threshold - early stopping")
@@ -329,6 +352,9 @@ class DiarizeGPT(Module):
                 next_token = utils.multinomial(probs, num_samples=1)
 
             next_token = next_token.flatten().long()
+
+            # If we're at a class prediction step, prevent overlapping 
+
             tokens = torch.cat([tokens, next_token])
 
             next_emb = self.text_emb(next_token)[None] + self.text_pos_emb(step)
@@ -339,6 +365,7 @@ class DiarizeGPT(Module):
 
             emb = torch.cat((emb, next_emb), dim=1)
 
+        # If it isn't, remove the last prediction?
         assert tokens.shape[-1] % 3 == 0
 
         # Convert these tokens into labels
@@ -346,8 +373,8 @@ class DiarizeGPT(Module):
 
         for start, end, label in tokens.split(3):
             # Unquantize the start and end times
-            start = (start-2) * self.config.data.max_secs / self.num_time_tokens
-            end = (end-2) * self.config.data.max_secs / self.num_time_tokens 
+            start = dequantize(self.config.data.max_secs, self.num_time_tokens, start)
+            end = dequantize(self.config.data.max_secs, self.num_time_tokens, end)
             label = chr(ord("A") + (self.num_embs - (label + 1)).item())
             nlabels.append([start.item(), end.item(), label])
 

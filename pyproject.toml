@@ -8,7 +8,7 @@ description = "Speaker Diarisation with Transformers"
 version = "0.0.1"
 dependencies = [
     "click",
-    "descript-audio-codec",
+    "denoiser",
     "einop",
     "librosa",
     "textgrid",

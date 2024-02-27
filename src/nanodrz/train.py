@@ -26,18 +26,6 @@ from nanodrz.augmentations import denoise
 from pyannote.metrics.diarization import DiarizationErrorRate
 from nanodrz import format_conversions as format
 
-
-@dataclass
-class Utterance:
-    file: str
-    speaker: str
-    segments: list[tuple[int, int]] = field(default_factory=lambda: [])
-
-    @property
-    def length(self):
-        return self.segments[-1][-1]
-
-
 def train(rank: int, world_size: int, config: Config, dev: bool = False):
     if world_size > 1:
         init_process_group(
@@ -150,7 +138,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
         checkpoint = torch.load(checkpoint_path, map_location=f"cuda:{rank}")
         utils.load_what_you_can(checkpoint["model"], model)
-        hours_seen = checkpoint["step"]
+        hours_seen = checkpoint["hours_seen"]
 
         if train.continue_from_checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer"])
@@ -273,6 +261,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
 
             if step % train.log_every == 0:
                 loss = loss.item() * gradient_accumulation_steps
+                # Determining loss slope for explosion detection / divergence
                 # losses.append(loss)
                 # loss_slope = optim.calculate_smoothed_slope(
                 #     losses,
@@ -339,7 +328,7 @@ def train(rank: int, world_size: int, config: Config, dev: bool = False):
                     },
                     step=step,
                 )
-
+        
                 checkpoint = {
                     "config": config.model_dump(),
                     "step": step,

@@ -252,7 +252,6 @@ def visualise_annotation(labels: list):
     from IPython.display import display
 
     annotation = labels_to_annotation(labels)
-    print(annotation)
     display(annotation)
 
 
@@ -264,7 +263,6 @@ def resample(source: int, target: int, audio: Tensor):
     global RESAMPLERS
     if source == target:
         return audio
-
 
     # Check resampler
     if source not in RESAMPLERS:
@@ -310,15 +308,16 @@ def cache(location=".cache") -> callable:
     return inner_function
 
 
-def contains_non_silence(audio, sr=16000, min_duration=.2, threshold=.1) -> bool:
+def contains_non_silence(audio, sr=16000, min_duration=0.2, threshold=0.1) -> bool:
     audio = audio < threshold
-    kernel_size = int(min_duration*sr)
+    kernel_size = int(min_duration * sr)
     if kernel_size % 2 == 0:
         kernel_size += 1
     kernel = torch.ones(1, kernel_size)
-    
-    out = F.conv1d(audio, kernel, paddig=kernel_size//2)
+
+    out = F.conv1d(audio, kernel, paddig=kernel_size // 2)
     return (out == kernel_size).any()
+
 
 @cache(os.path.join(CACHE_DIR, "find_nonsilence"))
 def find_nonsilence_chunks(
@@ -377,9 +376,9 @@ def find_nonsilence_chunks_vtrz(
     sr: int = 16000,
     min_duration: int = 4,
     device: torch.device = "cuda",
-    chunk_size: int = 60*16000,
+    chunk_size: int = 60 * 16000,
 ) -> list[torch.Tensor]:
-    if audio.shape[-1] < sr * min_duration: 
+    if audio.shape[-1] < sr * min_duration:
         return [audio]
 
     if chunk_size is None:
@@ -407,7 +406,7 @@ def find_nonsilence_chunks_vtrz(
     out = []
 
     cur_chunk = torch.zeros(1, 0, device=device)
-    
+
     for i, chunk in enumerate(silence.chunk(silence.shape[-1] // chunk_size, dim=-1)):
         silence_padding = torch.ones(1, kernel_size, device=device)
         chunk = torch.cat((silence_padding, chunk, silence_padding), dim=-1)
@@ -451,6 +450,10 @@ def load_what_you_can(checkpoint: dict, model: nn.Module):
 
         if pshape == mshape:
             model_state.copy_(param)
+            continue
+
+        if len(pshape) != len(mshape):
+            # Completely different shapes so probably unwise to merge
             continue
 
         min_shape = [
@@ -510,9 +513,6 @@ def mel_spec(
     spec = torch.matmul(mel_basis[str(fmax) + "_" + str(y.device)], spec)
     # dynamic_range_compression
     spec = torch.log(torch.clamp(spec, min=1e-5))
-
-    # Normalise
-    # spec = (spec - 2)/-14
     return spec
 
 

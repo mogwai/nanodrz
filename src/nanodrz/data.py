@@ -1,29 +1,25 @@
-from functools import partial
-import glob
 import itertools
+import json
 import os
 import random
 from dataclasses import dataclass, field
-import nanodrz.augmentations as augs
-
-from tqdm import tqdm
-from os.path import expanduser, join, basename
+from functools import partial
+from glob import glob
+from os import path
+from os.path import basename, expanduser, join
 
 import torch
 import torchaudio
-
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import IterableDataset
-
-
-from nanodrz import download
-from nanodrz.model import DiarizeGPT
-from nanodrz.constants import CACHE_DIR
-from nanodrz.utils import resample, find_nonsilence_chunks, multimap
-from nanodrz import format_conversions as formats
 from tqdm import tqdm
-from dataclasses import field
 
+import nanodrz.augmentations as augs
+from nanodrz import download
+from nanodrz import format_conversions as formats
+from nanodrz.constants import CACHE_DIR
+from nanodrz.model import DiarizeGPT
+from nanodrz.utils import find_nonsilence_chunks, multimap, resample
 
 
 class GeneratorIterableDataset(IterableDataset):
@@ -77,14 +73,12 @@ class DiarizationDataset(IterableDataset):
                 )
             )
 
-            # Clip the labels
-            labels = [[max(l[0], start), min(l[1], end), l[2]] for l in labels]
+            # Clip the labels + 2 for padding and eos
+            labels = [[max(l[0], start)+2, min(l[1], end)+2, l[2]] for l in labels]
             # Adjust timings
             labels = [[l[0] - start, l[1] - start, l[2]] for l in labels]
 
-            # PIX2Seq said this was best
-            random.shuffle(labels)
-
+            # TODO Make sure labels are labelled as A, B 
             yield wav, labels
 
     def __len__(self):
@@ -242,6 +236,37 @@ def voxconverse_dev(
     return ds
 
 
+@dataclass
+class Utterance:
+    file: str
+    speaker: str
+    segments: list[tuple[int, int]] = field(default_factory=lambda: [])
+
+    @property
+    def length(self):
+        return self.segments[-1][-1]
+
+
+def get_speakers(folder):
+    paths = glob(path.join(CACHE_DIR, folder, "*"))
+    utts = [json.load(open(p)) for p in paths]
+    speakers = {}
+
+    for u, p in zip(utts, paths):
+        spk = u["speaker"]
+        if spk not in speakers:
+            speakers[spk] = []
+        del u["length"]
+        speakers[spk].append(Utterance(**u))
+
+    for s in speakers.keys():
+        utts: list = speakers[s]
+        utts.sort(key=lambda x: x.length)
+        speakers[s] = utts
+
+    return speakers
+
+
 def artificial_drz_generator(
     model: torch.nn.Module,
     speakers: dict = None,
@@ -263,6 +288,7 @@ def artificial_drz_generator(
         if hasattr(model, "dac"):
             audio = model.dac.preprocess(audio, sr)
 
+        # Things can go wrong, shouldn't really have to do this but hacking an MVP here
         if audio.shape[-1] < 1 or audio.shape[-1] / sr > max_secs:
             continue
 
@@ -314,7 +340,7 @@ def artificial_diarisation_sample(
         max_sample_len = min(max([x.length for x in utts]), max_sample_len * sr)
 
         # What is our smallest segment potential
-        sample_len = int(random.uniform(0.5 * sr, max_sample_len))
+        sample_len = int(random.uniform(1 * sr, max_sample_len))
 
         # Pick a utterance that is as long as this or longer
         utts = list(filter(lambda x: x.length > sample_len, speakers[speaker]))
@@ -324,12 +350,17 @@ def artificial_diarisation_sample(
         # pick a segment starting with speech
         starts, ends = list(zip(*utt.segments))
         starts = [s for s in starts if s < (utt.length - sample_len)]
-        start = random.choice(starts)
 
-        try:
-            end = [e for e in ends if e < (start + sample_len) and e > start][-1]
-        except Exception as e:
+        if len(starts) < 1:
             continue
+
+        start = random.choice(starts)
+        end = [e for e in ends if e < start + sample_len and e > start]
+
+        if len(end) < 1:
+            continue
+
+        end = end[-1]
 
         sample = torchaudio.load(
             utt.file,
@@ -364,5 +395,7 @@ def artificial_diarisation_sample(
             for s in nlabels
         ]
         last_speaker = speaker
+
+    labels.sort(key=lambda x: x[0])
     audio = audio.clamp(-1, 1)
     return audio, labels

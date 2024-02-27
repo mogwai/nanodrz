@@ -1,37 +1,42 @@
-from glob import glob
-from nanodrz.augmentations import denoise
-import torchaudio
-import os
-from os.path import basename, exists, join
-from tqdm import tqdm
+"""
+This script is basically to preprocess a set of audio files contain single speakers. 
+Each wav file should have a single speaker in it and a way to indentify that speaker.
 
-from denoiser import pretrained
-import torchaudio
-from nanodrz.utils import resample
-import torch
-from dataclasses import dataclass, field
-from nanodrz.utils import sha256, CACHE_DIR, multimap
-from denoiser import pretrained
+This will denoise the audio, removing background sounds and then determine the boundaries of speech
+These labels will be used later to pick out sections of speech to be pulled together.
+"""
 
 import multiprocessing
+import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from glob import glob
+from os.path import basename, exists, join
 
 import torch
-
-torch.set_num_threads(1)
 import torchaudio
+from denoiser import pretrained
+from tqdm import tqdm
+
+from nanodrz.augmentations import denoise
+from nanodrz.utils import CACHE_DIR, sha256
+from nanodrz import data
 
 torch.cuda.set_device("cuda:0")
 denoiser = pretrained.dns64().cuda().eval()
 
 NUM_COPIES = 8
 
+# Downloads some data
+data.librilight_small()
+
 
 @torch.inference_mode()
-def denoise(denoiser, audio):
+def denoise(denoiser, audio, B=40):
+    """
+    Splits up long audio files into batches to be denoised on the gpu faster
+    """
     audio = audio.sum(dim=0, keepdim=True)
-    # audio = resample(sr, denoiser.sample_rate, audio)
-    B = 40
     denoiser = denoiser.cuda()
     wav = audio.split(B * denoiser.sample_rate, dim=1)
     denoised = []
@@ -41,10 +46,13 @@ def denoise(denoiser, audio):
     return denoised
 
 
+# Files should be all the things you want to preprocess
+
+# Denoised wavs will be saved in the same location with _d.wav so be careful not
+# match them here.
 files = glob("/home/harry/.cache/nanodrz/**/*.flac", recursive=True)
 
 denoiser = pretrained.dns64().cuda().eval()
-
 
 _, utils = torch.hub.load(
     repo_or_dir="snakers4/silero-vad", model="silero_vad", force_reload=True, onnx=False
@@ -76,7 +84,6 @@ def vad_save(f):
     audio, sr = torchaudio.load(f)
     vad = vad_models[pid]
     speech_timestamps = get_speech_timestamps(audio, vad, sampling_rate=sr)
-    utt = Utterance(file=f, speaker=f.split("/")[-3])
     utt = {}
     utt["file"] = f
     utt["speaker"] = f.split("/")[-3]

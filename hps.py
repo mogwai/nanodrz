@@ -1,6 +1,7 @@
 """
 Little script to do some HPS
 """
+
 from nanodrz.train import main, Config
 from nanodrz.config import diffstr, DataConfig
 
@@ -29,5 +30,6 @@ variations = {
     # Scramble Speakers
 }
 
-for k,v in variations.values():
-    
+for k, v in variations.values():
+    # TODO
+    pass
