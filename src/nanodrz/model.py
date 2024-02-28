@@ -14,8 +14,21 @@ from functools import partial
 import dac
 import torch
 
-def dequantize(max_secs, num_time_tokens, time):
-    return (time - 2) * max_secs / num_time_tokens
+
+def quantize(time, max_seconds, num_time_tokens):
+    return time / max_seconds * num_time_tokens + 2
+
+
+def dequantize(time, max_secs, num_time_tokens):
+    return (time - 2) / num_time_tokens * max_secs
+
+
+def enc_label(label, num_embs):
+    return num_embs - 1 - (ord(label) - ord("A"))
+
+
+def dec_label(label, num_embs):
+    return chr(ord("A") + (num_embs - (label + 1)).item())
 
 
 def check_valid_label(token_so_far) -> bool:
@@ -30,9 +43,6 @@ def check_valid_label(token_so_far) -> bool:
         # Not intersecting.
         if (start > lab[0] and start > lab[1]) or end < lab[0] or lab[1]:
             continue
-        
-
-
 
 
 class DiarizeGPT(Module):
@@ -269,6 +279,7 @@ class DiarizeGPT(Module):
     def generate(
         self,
         audio: Tensor,
+        prefix_labels: Tensor = None,
         temperature=0.8,
         # Total number of labels * 3
         # Must be a multiple of 3
@@ -310,6 +321,10 @@ class DiarizeGPT(Module):
         audio = audio + self.audio_pos_emb(torch.arange(audio.shape[1]))
 
         emb = torch.cat((audio, self.start_diarize_emb[None][None]), dim=1)
+
+        if prefix_labels is not None:
+            prefix_emb = self.text_emb(prefix_labels)[None]
+            emb = torch.cat((emb, prefix_emb), dim=1)
 
         tokens = torch.zeros(0, dtype=torch.long).cuda()
 
@@ -353,8 +368,7 @@ class DiarizeGPT(Module):
 
             next_token = next_token.flatten().long()
 
-            # If we're at a class prediction step, prevent overlapping 
-
+            # If we're at a class prediction step, prevent overlapping
             tokens = torch.cat([tokens, next_token])
 
             next_emb = self.text_emb(next_token)[None] + self.text_pos_emb(step)
@@ -373,9 +387,9 @@ class DiarizeGPT(Module):
 
         for start, end, label in tokens.split(3):
             # Unquantize the start and end times
-            start = dequantize(self.config.data.max_secs, self.num_time_tokens, start)
-            end = dequantize(self.config.data.max_secs, self.num_time_tokens, end)
-            label = chr(ord("A") + (self.num_embs - (label + 1)).item())
+            start = dequantize(start, self.config.data.max_secs, self.num_time_tokens)
+            end = dequantize(end, self.config.data.max_secs, self.num_time_tokens)
+            label = dec_label(label, self.num_embs)
             nlabels.append([start.item(), end.item(), label])
 
         return nlabels

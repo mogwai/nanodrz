@@ -469,7 +469,7 @@ def load_what_you_can(checkpoint: dict, model: nn.Module):
 def mel_spec(
     audio: Tensor,
     sr: int = 16000,
-    n_mels: int = 120,
+    n_mels: int = 80,
     n_fft: int = 1024,
     hop_size: int = 256,
     win_size: int = 1024,

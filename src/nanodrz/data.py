@@ -74,11 +74,11 @@ class DiarizationDataset(IterableDataset):
             )
 
             # Clip the labels + 2 for padding and eos
-            labels = [[max(l[0], start)+2, min(l[1], end)+2, l[2]] for l in labels]
+            labels = [[max(l[0], start) + 2, min(l[1], end) + 2, l[2]] for l in labels]
             # Adjust timings
             labels = [[l[0] - start, l[1] - start, l[2]] for l in labels]
 
-            # TODO Make sure labels are labelled as A, B 
+            # TODO Make sure labels are labelled as A, B
             yield wav, labels
 
     def __len__(self):
@@ -106,8 +106,8 @@ def collate_fn(model: DiarizeGPT) -> callable:
 
         for b in labels:
             for l in b:
-                l[1] = round(l[1] / Q) + 2
                 l[0] = round(l[0] / Q) + 2
+                l[1] = round(l[1] / Q) + 2
                 l[2] = model.num_embs - 1 - (ord(l[2]) - ord("A"))
 
         audios = pad_sequence([a.permute(1, 0) for a in audios], batch_first=True)
@@ -142,9 +142,9 @@ def gather_speakers_from_folder(
 
     folder = expanduser(folder)
     wav_files = itertools.chain(
-        *[glob.glob(folder + f"/**/*.{ext}", recursive=True) for ext in exts]
+        *[glob(folder + f"/**/*.{ext}", recursive=True) for ext in exts]
     )
-    speakers: dict[str, Speaker] = {}
+    speakers: dict[str] = {}
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -153,26 +153,12 @@ def gather_speakers_from_folder(
         speaker_name = retrieve_speaker(file)
         speaker = None
 
-        if speaker_name in speakers:
-            speaker = speakers[speaker_name]
-        else:
-            speaker = Speaker()
-            speaker.name = speaker_name
-            speaker.utts = []
-            speakers[speaker_name] = speaker
+        if speaker_name not in speakers:
+            speakers[speaker_name] = []
 
-        # Seperate into smaller files
-        if split_silence:
-            chunk_files = find_nonsilence_chunks(file, device=device)
-        else:
-            chunk_files = [file]
+        speakers[speaker_name].append(file)
 
-        speakers[speaker_name].utts += chunk_files
-
-    for s in speakers.values():
-        s.utts = list(enumerate(s.utts))
-
-    return list(speakers.values())
+    return speakers
 
 
 def libritts_test() -> list:
@@ -247,8 +233,13 @@ class Utterance:
         return self.segments[-1][-1]
 
 
-def get_speakers(folder):
-    paths = glob(path.join(CACHE_DIR, folder, "*"))
+def get_speakers(
+    folder=path.join(
+        CACHE_DIR,
+        "utts",
+    )
+):
+    paths = glob(path.join(folder, "*"))
     utts = [json.load(open(p)) for p in paths]
     speakers = {}
 

@@ -39,12 +39,12 @@ Transformers need a lot of data and this way we can make datasets on the fly wit
 
 We'll be limited to doing chunks of audio, however we can prompt the model with some audio from the previous chunk:
 
-Say we complete inferece on our first chunk and identified two speakers, A and B. In the second chunk, we'll take 5 seconds of the audio for each speaker and prompt the model with is so that it knows who they are. This prevents the model swapping the labels for speakers between chunks.
+Say we complete inference on our first chunk and identified two speakers, A and B. In the second chunk, we'll take 5 seconds of the audio for each speaker and prompt the model with is so that it knows who they are. This prevents the model swapping the labels for speakers between chunks.
 
 2 chunk inference example
 
 ```
-5 seconds of A, 200ms of silence, 5 seconds of B, {audio we want to diarize}, start_diairise_cmd_token, 0, 5, A 6, 11, B, ..., eos
+5 seconds of A, 200ms of silence, 5 seconds of B, 200ms silence, {audio we want to diarize}, start_diairise_cmd_token, 0, 5, A 5.2, 10.2, B, ..., eos
 ```
 
 Yes we loose some capacity but this prevents us having to ID each chunks speaker labels at the end. 
@@ -55,16 +55,22 @@ Yes we loose some capacity but this prevents us having to ID each chunks speaker
 pip install git+https://github.com/mogwai/nanodrz.git#egg=nanodrz
 ```
 
+### Pre-processing
+
+```py
+python scripts/preprocess.py
+```
+
 ### Train
 
 ```sh
-train configs/medium_simple_no_ints_mel.yaml
+train configs/medium_mel.yaml
 ```
 
 ### Inference
 
 ```
-notebooks/inference.ipynb
+notebooks/3_inference.ipynb
 ```
 
 # Experiments
@@ -96,4 +102,16 @@ https://arxiv.org/pdf/2310.13025.pdf
 
 [Herve Bredin](https://github.com/hbredin) for his amazing research on pyannote.audio
 
-[Andrej Karpathy - NanoGPT](https://github.com/karpathy/nanoGPT/) For lots of great explanation on transformers 
+[Andrej Karpathy - NanoGPT](https://github.com/karpathy/nanoGPT/) For lots of great explanation on transformers and insparation for this codebase's style.
+
+# Citation
+
+@software{nanodrz_2024,
+  author = {Coultas Blum, Harry},
+  month = {01},
+  title = {{nanodrz}},
+  url = {https://github.com/mogwai/nanodrz},
+  version = {1.0.0},
+  year = {2024}
+}
+
