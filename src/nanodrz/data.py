@@ -33,7 +33,7 @@ class GeneratorIterableDataset(IterableDataset):
 class DiarizationDataset(IterableDataset):
     def __init__(self, folder, sr=16000, max_secs=30, min_seconds=10):
         self.sr = sr
-        self.rttm_files = glob.glob(os.path.join(folder, "*.rttm"))
+        self.rttm_files = glob(os.path.join(folder, "*.rttm"))
         self.min_secs = min_seconds
         self.max_secs = max_secs
 
