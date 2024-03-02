@@ -1,10 +1,45 @@
 
 
-# Nano Diarization - WIP!
+# Nano Diarization
 
 [Pix2Seq](https://ai.googleblog.com/2022/04/pix2seq-new-language-interface-for.html) for Speaker Diarization.
 
-Not quite so nano anymore ;) Lots of functions!
+
+https://studio.youtube.com/video/_Sq9AALDJFE/edit
+
+# Instructions
+
+```
+pip install git+https://github.com/mogwai/nanodrz.git#egg=nanodrz
+```
+
+### Pre-processing
+
+You'll need to do this before you can do inference in 3_inference.ipynb
+
+```py
+python scripts/preprocess.py
+```
+
+### Train
+
+```sh
+train configs/medium_mel.yaml
+```
+
+### Inference
+
+```
+notebooks/3_inference.ipynb
+```
+
+# Experiments
+
+https://wandb.ai/harrycblum/nano-diarization?workspace=user-harrycblum
+
+# Experiment Notes
+
+https://fluxions.notion.site/nanodrz-Experiment-Log-acea3d5f436949b68e1f5a520c8cfdbc
 
 # Overview
 
@@ -49,37 +84,7 @@ Say we complete inference on our first chunk and identified two speakers, A and 
 
 Yes we loose some capacity but this prevents us having to ID each chunks speaker labels at the end. 
 
-# Instructions
 
-```
-pip install git+https://github.com/mogwai/nanodrz.git#egg=nanodrz
-```
-
-### Pre-processing
-
-```py
-python scripts/preprocess.py
-```
-
-### Train
-
-```sh
-train configs/medium_mel.yaml
-```
-
-### Inference
-
-```
-notebooks/3_inference.ipynb
-```
-
-# Experiments
-
-https://wandb.ai/harrycblum/nano-diarization?workspace=user-harrycblum
-
-# Experiment Notes
-
-https://fluxions.notion.site/nanodrz-Experiment-Log-acea3d5f436949b68e1f5a520c8cfdbc
 
 # Core Questions
 
