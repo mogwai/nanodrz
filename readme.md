@@ -29,8 +29,13 @@ train configs/medium_mel.yaml
 
 ### Inference
 
+These notebooks contain inference code. 
+
+Download the [checkpoint](https://drive.google.com/file/d/1Cg_GPHxpcWMqGpsDlLMXlr5ui0mPYacn)
+
 ```
 notebooks/3_inference.ipynb
+notebooks/4_real_inference.ipynb
 ```
 
 # Experiments
