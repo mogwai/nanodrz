@@ -1,11 +1,8 @@
-
-
 # Nano Diarization
 
 [Pix2Seq](https://ai.googleblog.com/2022/04/pix2seq-new-language-interface-for.html) for Speaker Diarization.
 
-
-https://studio.youtube.com/video/_Sq9AALDJFE/edit
+[Video Explainer](youtube.com/watch?v=_Sq9AALDJFE)
 
 # Instructions
 
