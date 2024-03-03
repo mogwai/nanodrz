@@ -113,6 +113,7 @@ https://arxiv.org/pdf/2310.13025.pdf
 
 # Citation
 
+```
 @software{nanodrz_2024,
   author = {Coultas Blum, Harry},
   month = {01},
@@ -121,4 +122,4 @@ https://arxiv.org/pdf/2310.13025.pdf
   version = {1.0.0},
   year = {2024}
 }
-
+``
