@@ -2,7 +2,7 @@
 
 [Pix2Seq](https://ai.googleblog.com/2022/04/pix2seq-new-language-interface-for.html) for Speaker Diarization.
 
-[Video Explainer](youtube.com/watch?v=_Sq9AALDJFE)
+[Video Explainer](https://youtube.com/watch?v=_Sq9AALDJFE)
 
 # Instructions
 
