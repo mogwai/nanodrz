@@ -10,8 +10,8 @@ from nanodrz.modules import ScaledSinusoidalEmbedding, Decoder, WhisperConvs
 from nanodrz.utils import to_device, make_padding_mask, mel_spec
 from nanodrz import utils
 from functools import partial
-
 import dac
+
 import torch
 
 
@@ -415,56 +415,3 @@ class DiarizeGPT(Module):
         model = DiarizeGPT(config)
         model.load_state_dict(ckpt["model"], strict=False)
         return model
-
-
-def main():
-    """
-    Performs a quick training step
-    """
-    from nanodrz.data import (
-        artificial_diarisation_sample,
-        libritts_test,
-    )
-
-    device_type = "cuda"
-
-    model = ModelConfig()
-    config = DiarizeGPT(config).cuda()
-    B = 2
-    speakers = libritts_test()
-
-    audios = []
-    labels = []
-
-    for _ in range(B):
-        audio, label = artificial_diarisation_sample(speakers, max_secs=30, sr=16000)
-        audio = model.dac.preprocess(audio, config.model.dac.sample_rate)
-        audios.append(rearrange(audio, "c s -> s c"))
-        labels.append("\n".join([",".join([str(x) for x in l]) for l in label]))
-
-    text_tokens = model.text_tokenizer.batch_encode_plus(
-        labels,
-        return_tensors="pt",
-        padding="longest",
-    )
-
-    # Preprocess the audio here and get the lengths
-    label_lengths = text_tokens["attention_mask"].sum(dim=-1)
-    label_lengths = to_device(label_lengths, "cuda")
-    text_tokens = text_tokens["input_ids"].cuda()
-
-    audio_lengths = torch.tensor([a.shape[0] for a in audios]) // 320
-    audio_lengths = to_device(audio_lengths, "cuda")
-
-    audios = pad_sequence(audios, batch_first=True)
-    audios = rearrange(audios, "B S C -> B C S")
-    audios = to_device(audios, "cuda")
-
-    dtype = torch.float16
-
-    with torch.autocast(enabled=True, device_type=device_type, dtype=dtype):
-        print(model(audios, text_tokens, audio_lengths, label_lengths))
-
-
-if __name__ == "__main__":
-    main()
