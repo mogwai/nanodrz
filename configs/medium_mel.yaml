@@ -1,0 +1,22 @@
+train:
+  gpus: 1
+  checkpoint: /home/harry/runs/nanodrz/1708904995/0014000.pt
+  continue_from_checkpoint: true
+  total_steps: 14_000
+  max_lr: 1e-4
+  batch_size: 12
+  flash:
+    enable_flash: true
+  grad_acc_steps: 8
+model:
+  num_embs: 256
+  dmodel: 1536
+  layers: 16
+  audio_encode: mel
+data:
+  num_workers: 4
+  max_seconds: 15
+  min_secs: 5
+  silence_max: 1
+  interrupt_max: 1
+  num_speakers: 3

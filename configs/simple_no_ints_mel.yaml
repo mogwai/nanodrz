@@ -1,0 +1,23 @@
+train:
+  checkpoint: /home/harry/storj/runs/nanodrz/1706615262/0004500.pt
+  # continue_from_checkpoint: true
+  total_steps: 30_000
+  max_lr: 1e-4
+  batch_size: 16
+  grad_acc_steps: 12
+model:
+  num_embs: 512
+  dmodel: 1024
+  layers: 8
+  audio_encode: mel
+data:
+  silence_max: 1
+  interrupt_max: .5
+  # Map the speakers to random labels
+  scramble_labels: false
+  num_speakers: 4
+  synth_datasets:
+    - libritts_dev
+    - libritts_test
+    - librilight_small
+    - librilight_medium

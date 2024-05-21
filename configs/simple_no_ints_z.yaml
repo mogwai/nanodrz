@@ -1,0 +1,8 @@
+train:
+  checkpoint: /home/harry/storj/runs/nanodrz/1706300953/0006000.pt
+  max_lr: 1e-4
+
+data:
+  interrupt_sec_mean: 0
+  silence_max: 2
+  num_speakers: 2
